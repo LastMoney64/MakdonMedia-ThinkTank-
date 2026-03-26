@@ -626,11 +626,27 @@ function handleCmd(text){
     ['/researcher|리서치',4],['/moderator|중재',5],['/blogger|블로그',6],['/social|인스타',7],
     ['/media|쇼츠|영상',8],['/telegram|텔레그램|브리핑',9]];
   for(const[p,idx]of cmds){if(p.split('|').some(k=>l.includes(k))){setState(idx,'working');hlAgent(agents[idx].id);return;}}
+  // Live workflow triggers
+  const triggerMap={
+    '아침':'morning','모닝':'morning','morning':'morning',
+    '코인':'coin','coin':'coin',
+    'kol':'kol','인사이트':'kol',
+    'ai':'ai','에이아이':'ai',
+    '저녁':'evening','이브닝':'evening','evening':'evening',
+    '매크로':'macro','macro':'macro',
+    '요약':'summary','summary':'summary'
+  };
+  for(const[k,wf]of Object.entries(triggerMap)){
+    if(l.includes(k)){triggerWorkflow(wf);return;}
+  }
   if(l.includes('막돈')||l.includes('전체발행')){
     addF('sys',null,'✈️ <b>전체 발행 시퀀스</b>');
-    [9,0,4].forEach((ag,i)=>setTimeout(()=>setState(ag,'working'),i*3000));
+    if(liveMode){
+      ['morning','coin','kol'].forEach((wf,i)=>setTimeout(()=>triggerWorkflow(wf),i*5000));
+    }else{
+      [9,0,4].forEach((ag,i)=>setTimeout(()=>setState(ag,'working'),i*3000));
+    }
     addAutoHistory('전체 발행 시퀀스 시작');
-    // Switch to automation tab
     document.querySelector('[data-tab="auto"]').click();
   }else if(l.includes('파이프')||l.includes('자동화')){
     addF('sys',null,'🚀 <b>파이프라인</b>');
@@ -660,6 +676,100 @@ function hlAgent(id){
 }
 
 // ═══════════════════════════════════════
+// LIVE API INTEGRATION
+// ═══════════════════════════════════════
+let liveMode=false;
+const AGENT_MAP={telegram:9,analyst:0,researcher:4,moderator:5,blogger:6,social:7,media:8};
+const WF_TRIGGERS={
+  morning:'morning',coin:'coin',kol:'kol',ai:'ai',
+  evening:'evening',macro:'macro',summary:'summary'
+};
+
+async function fetchStatus(){
+  try{
+    const r=await fetch('/api/status');
+    const d=await r.json();
+    if(!d.ok)return;
+    liveMode=true;
+    // Update agent states from real workflow runs
+    const agentR=await fetch('/api/agents');
+    const ad=await agentR.json();
+    if(ad.ok){
+      Object.entries(ad.agents).forEach(([agId,info])=>{
+        const idx=AGENT_MAP[agId];
+        if(idx===undefined)return;
+        if(info.state!==agents[idx].state){
+          setState(idx,info.state);
+          if(info.state==='working') addF('live',idx,`🔴 LIVE: ${info.task}`);
+        }
+      });
+    }
+    // Update automation tab with real runs
+    const runs=d.runs.slice(0,15);
+    runs.forEach(run=>{
+      const exists=autoHistory.find(h=>h.id===run.id);
+      if(!exists){
+        const t=new Date(run.updated).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+        const icon=run.conclusion==='success'?'✅':run.conclusion==='failure'?'❌':run.status==='in_progress'?'🔄':'⏳';
+        autoHistory.unshift({t,msg:`${icon} ${run.name}`,id:run.id});
+      }
+    });
+    if(autoHistory.length>30)autoHistory.length=30;
+    renderAutoHistory();
+  }catch(e){
+    // API not available, stay in simulation mode
+  }
+}
+
+async function fetchLogs(){
+  try{
+    const r=await fetch('/api/logs');
+    const d=await r.json();
+    if(!d.ok||!d.logs.length)return;
+    const recent=d.logs.slice(-10).reverse();
+    const tgEl=document.getElementById('tg-schedule');
+    if(!tgEl)return;
+    // Overlay real log status on TG schedule
+    recent.forEach(log=>{
+      const items=tgEl.querySelectorAll('.auto-item');
+      items.forEach(item=>{
+        const nameEl=item.querySelector('.auto-name');
+        if(nameEl&&nameEl.textContent.includes(log.type)){
+          const stEl=item.querySelector('.auto-status');
+          if(stEl&&log.status==='ok'){
+            stEl.textContent='완료';stEl.className='auto-status done';
+            item.className='auto-item done';
+            item.querySelector('.auto-dot').className='auto-dot done';
+          }
+        }
+      });
+    });
+  }catch(e){}
+}
+
+async function triggerWorkflow(key){
+  addF('sys',null,`🚀 <b>${key}</b> 워크플로우 트리거 중...`);
+  try{
+    const r=await fetch(`/api/trigger/${key}`,{method:'POST'});
+    const d=await r.json();
+    if(d.ok){
+      addF('sys',null,`✅ <b>${d.name}</b> 트리거 성공!`);
+      addAutoHistory(`🚀 ${d.name} 수동 트리거`);
+      // Animate corresponding agent
+      const wf=d.workflow;
+      const agMap={morning:'telegram',coin:'analyst',kol:'researcher',ai:'researcher',
+        evening:'telegram',macro:'analyst',summary:'moderator'};
+      const agId=agMap[wf];
+      if(agId){const idx=AGENT_MAP[agId];if(idx!==undefined)setState(idx,'working');}
+    }else{
+      addF('sys',null,`⚠️ 트리거 실패: ${d.error||'unknown'}`);
+    }
+  }catch(e){
+    addF('sys',null,`❌ API 오류: ${e.message}`);
+  }
+}
+
+// ═══════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════
 function init(){
@@ -672,11 +782,29 @@ function init(){
     const c=b.dataset.c;
     if(c==='start'){paused=false;addF('sys',null,'▶ START');}
     else if(c==='pause'){paused=true;agents.forEach((_,i)=>setState(i,'idle'));addF('sys',null,'⏸ PAUSED');}
+    else if(c==='makdon'){
+      // Trigger all TG workflows
+      addF('sys',null,'✈️ <b>전체 발행 시퀀스</b>');
+      document.querySelector('[data-tab="auto"]').click();
+      if(liveMode){
+        triggerWorkflow('morning');
+      }else{
+        [9,0,4].forEach((ag,i)=>setTimeout(()=>setState(ag,'working'),i*3000));
+        addAutoHistory('전체 발행 시퀀스 시작');
+      }
+    }
     else handleCmd('/'+c);
   }));
   window.addEventListener('resize',scaleOffice);
   addF('sys',null,'🏢 <b>Think Tank HQ</b> online');
   agents.forEach((a,i)=>setTimeout(()=>{setState(i,'thinking');addF('sys',i,`${a.name} 접속`);},400+i*300));
+
+  // Live data polling
+  fetchStatus();
+  fetchLogs();
+  setInterval(fetchStatus,60000);  // Poll every 60s
+  setInterval(fetchLogs,120000);   // Poll logs every 2min
+
   requestAnimationFrame(tick);
 }
 document.addEventListener('DOMContentLoaded',init);
