@@ -3,6 +3,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const cron = require('node-cron');
 
 const PORT = process.env.PORT || 3000;
 const GH_TOKEN = process.env.GITHUB_TOKEN || '';
@@ -325,6 +326,43 @@ server.listen(PORT, () => {
   console.log(`Think Tank Dashboard running on port ${PORT}`);
   console.log(`GitHub integration: ${GH_TOKEN ? 'ENABLED' : 'DISABLED (set GITHUB_TOKEN)'}`);
   console.log(`Telegram bot: ${TG_BOT_TOKEN ? 'ENABLED' : 'DISABLED (set FORUM_BOT_TOKEN)'}`);
+
+  // ── 정시 발행 스케줄러 (KST 기준, Railway는 UTC) ──
+  if (GH_TOKEN) {
+    const SCHEDULE = [
+      { cron: '30 0 * * *',    key: 'morning',  label: '아침 브리핑' },    // 09:30 KST
+      { cron: '0 2 * * 1-5',   key: 'coin',     label: '코인 분석' },      // 11:00 KST
+      { cron: '0 5 * * 1-5',   key: 'kol',      label: 'KOL 인사이트' },   // 14:00 KST
+      { cron: '0 9 * * 1-5',   key: 'ai',       label: 'AI 리포트' },      // 18:00 KST
+      { cron: '0 13 * * 1-5',  key: 'macro',    label: '매크로 리포트' },   // 22:00 KST
+      { cron: '40 14 * * *',   key: 'evening',  label: '저녁 브리핑' },     // 23:40 KST
+      { cron: '55 14 * * *',   key: 'summary',  label: '일별 요약' },       // 23:55 KST
+      { cron: '0 3 * * *',     key: 'failsafe', label: '페일세이프' },      // 12:00 KST
+    ];
+
+    for (const s of SCHEDULE) {
+      cron.schedule(s.cron, async () => {
+        const wf = WORKFLOWS[s.key];
+        console.log(`[CRON] ${new Date().toISOString()} — ${s.label} 트리거`);
+        try {
+          const r = await ghPost(
+            `/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/${wf.file}/dispatches`,
+            { ref: 'main' }
+          );
+          const ok = r.status === 204;
+          console.log(`[CRON] ${s.label}: ${ok ? '성공' : '실패 (' + r.status + ')'}`);
+          await tgSend(`⏰ <b>[정시 발행]</b> ${wf.name} — ${ok ? '트리거 완료' : '❌ 실패'}`, COMMAND_TOPIC_ID);
+        } catch (err) {
+          console.error(`[CRON] ${s.label} 에러:`, err.message);
+          await tgSend(`❌ <b>[정시 발행 오류]</b> ${wf.name} — ${err.message}`, COMMAND_TOPIC_ID);
+        }
+      }, { timezone: 'UTC' });
+      console.log(`  📅 ${s.label}: ${s.cron} (UTC)`);
+    }
+    console.log('Cron scheduler: ENABLED (8 workflows)');
+  } else {
+    console.log('Cron scheduler: DISABLED (no GITHUB_TOKEN)');
+  }
 
   // Auto-register Telegram webhook on startup
   if (TG_BOT_TOKEN && process.env.RAILWAY_PUBLIC_DOMAIN) {
