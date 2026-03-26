@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Think Tank — Pixel Office</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Courier New',monospace;background:#1a1a2e;color:#e0e0e0;overflow:hidden;height:100vh;display:flex;flex-direction:column;image-rendering:pixelated}
+
+/* ── STATUS BAR ── */
+.topbar{display:flex;align-items:center;gap:6px;padding:8px 14px;background:#0f0f23;border-bottom:2px solid #2a2a4a;flex-shrink:0;overflow-x:auto;flex-wrap:nowrap;min-height:48px;max-height:48px}
+.topbar::-webkit-scrollbar{height:0}
+.ag-chip{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:4px;border:2px solid #333;background:#1a1a2e;white-space:nowrap;flex-shrink:0;font-size:14px;transition:all .3s;cursor:pointer}
+.ag-chip:hover{border-color:#7af}
+.ag-chip.working{border-color:#4a4;background:#1a2e1a}
+.ag-chip.thinking{border-color:#a84;background:#2e2a1a}
+.ag-chip .chip-dot{width:8px;height:8px;border-radius:0;flex-shrink:0}
+.ag-chip.idle .chip-dot{background:#555}
+.ag-chip.working .chip-dot{background:#4f4;box-shadow:0 0 6px #4f4}
+.ag-chip.thinking .chip-dot{background:#fa0;box-shadow:0 0 6px #fa0}
+.chip-name{font-weight:900;font-size:13px}
+.chip-state{font-size:11px;text-transform:uppercase;letter-spacing:1px;opacity:.7;font-weight:700}
+.topbar-title{font-size:16px;font-weight:700;color:#7af;margin-right:10px;flex-shrink:0}
+.topbar-sep{width:1px;height:24px;background:#333;flex-shrink:0;margin:0 6px}
+#chips{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;flex:1;overflow-x:auto}
+#chips::-webkit-scrollbar{height:0}
+
+/* ── MAIN ── */
+.main{flex:1;display:grid;grid-template-columns:1fr 360px;overflow:hidden}
+
+/* ── PIXEL OFFICE ── */
+.office-wrap{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#111122}
+.office{position:relative;width:880px;height:560px;background:#d4c4a0;border:3px solid #555;image-rendering:pixelated;transform-origin:center;overflow:hidden}
+
+/* Floor tiles */
+.office::before{content:'';position:absolute;inset:0;background-image:
+  linear-gradient(45deg,#c8b890 25%,transparent 25%),
+  linear-gradient(-45deg,#c8b890 25%,transparent 25%),
+  linear-gradient(45deg,transparent 75%,#c8b890 75%),
+  linear-gradient(-45deg,transparent 75%,#c8b890 75%);
+  background-size:32px 32px;background-position:0 0,0 16px,16px -16px,-16px 0;opacity:.3}
+
+/* ── WALLS ── */
+.wall{position:absolute;background:#8090a0;z-index:5}
+.wall-h{height:6px}
+.wall-v{width:6px}
+.wall-top{position:absolute;top:0;left:0;right:0;height:6px;background:#8090a0;z-index:5}
+.wall-bot{position:absolute;bottom:0;left:0;right:0;height:6px;background:#8090a0;z-index:5}
+.wall-left{position:absolute;top:0;left:0;bottom:0;width:6px;background:#8090a0;z-index:5}
+.wall-right{position:absolute;top:0;right:0;bottom:0;width:6px;background:#8090a0;z-index:5}
+
+/* ── ROOM ── */
+.room{position:absolute;z-index:1}
+.room-label{position:absolute;top:8px;left:10px;font-size:15px;font-weight:900;color:rgba(0,0,0,.55);z-index:6;letter-spacing:2px;text-shadow:1px 1px 0 rgba(255,255,255,.2)}
+
+/* Room floors */
+.floor-wood{background:#c8a87a}
+.floor-carpet{background:#7a6aaa}
+.floor-tile{background:#a0b8c0}
+.floor-green{background:#8ab070}
+
+/* ── FURNITURE (pixel style) ── */
+.furn{position:absolute;z-index:3;image-rendering:pixelated}
+.desk-px{width:48px;height:28px;background:#8b6b4a;border:2px solid #6b4b2a;border-radius:0}
+.desk-px::after{content:'';position:absolute;top:2px;left:50%;transform:translateX(-50%);width:20px;height:14px;background:#222;border:1px solid #444;border-radius:0}
+.chair-px{width:16px;height:16px;background:#444;border:2px solid #333}
+.plant-px{width:14px;height:20px;position:relative}
+.plant-px::before{content:'';position:absolute;bottom:0;left:3px;width:8px;height:8px;background:#8b6b4a;border:1px solid #6b4b2a}
+.plant-px::after{content:'';position:absolute;top:0;left:1px;width:12px;height:14px;background:#4a8;border-radius:50% 50% 0 0;border:1px solid #386}
+.shelf-px{width:40px;height:22px;background:#6b4b2a;border:2px solid #4a3020;display:flex;flex-wrap:wrap;padding:2px;gap:1px}
+.shelf-px i{width:6px;height:7px;border-radius:0;display:block}
+.monitor-px{width:22px;height:18px;background:#1a1a2e;border:2px solid #555;position:relative}
+.monitor-px::after{content:'';position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:8px;height:4px;background:#555}
+.monitor-px.on::before{content:'';position:absolute;inset:2px;background:#2a4a2a;animation:screenFlicker 3s infinite}
+@keyframes screenFlicker{0%,100%{background:#2a4a2a}50%{background:#3a5a3a}}
+.couch-px{width:56px;height:24px;background:#6a5aaa;border:2px solid #4a3a8a;border-radius:0}
+.mtable-px{width:64px;height:40px;background:#8b7b5a;border:3px solid #6b5b3a;border-radius:50%}
+.cooler-px{width:14px;height:24px;background:#8ac;border:2px solid #68a;position:relative}
+.cooler-px::before{content:'';position:absolute;top:-4px;left:2px;width:8px;height:6px;background:#adf;border:1px solid #68a}
+.wboard-px{width:50px;height:6px;background:#eee;border:2px solid #aaa}
+
+/* ── PIXEL AGENT ── */
+.pix-agent{position:absolute;z-index:10;transition:left .8s ease-in-out, top .8s ease-in-out;cursor:pointer}
+.pix-body{position:relative;width:36px;height:50px;image-rendering:pixelated}
+.pix-head{position:absolute;top:4px;left:2px;width:32px;height:22px;border-radius:3px;border:2px solid rgba(0,0,0,.25)}
+.pix-eyes{position:absolute;top:12px;left:7px;width:20px;height:6px;display:flex;gap:8px}
+.pix-eye{width:5px;height:5px;background:#111;border-radius:0}
+.pix-torso{position:absolute;top:26px;left:3px;width:30px;height:16px;border-radius:0;border:2px solid rgba(0,0,0,.2)}
+.pix-legs{position:absolute;top:42px;left:7px;display:flex;gap:6px}
+.pix-leg{width:8px;height:10px;background:#555;border-radius:0}
+/* Accessory layer */
+.pix-acc{position:absolute;image-rendering:pixelated;z-index:12}
+/* Name tag */
+.pix-name{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:13px;font-weight:900;white-space:nowrap;text-shadow:1px 1px 0 #000,-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,0 0 6px rgba(0,0,0,.8);z-index:11;letter-spacing:1px}
+
+/* ── AGENT ACCESSORIES ── */
+/* 분석가: 안경 */
+.acc-glasses{top:11px;left:4px;width:28px;height:9px;border:2px solid #aaddff;border-radius:0;background:transparent}
+.acc-glasses::before{content:'';position:absolute;top:0;left:2px;width:8px;height:7px;border:2px solid #aaddff;background:rgba(100,180,255,.2)}
+.acc-glasses::after{content:'';position:absolute;top:0;right:2px;width:8px;height:7px;border:2px solid #aaddff;background:rgba(100,180,255,.2)}
+
+/* 비평가: 뿔 + 화난 눈썹 */
+.acc-horns{top:-4px;left:2px;width:32px;height:12px}
+.acc-horns::before{content:'';position:absolute;left:2px;top:0;width:8px;height:12px;background:#c73a3a;clip-path:polygon(50% 0,0 100%,100% 100%)}
+.acc-horns::after{content:'';position:absolute;right:2px;top:0;width:8px;height:12px;background:#c73a3a;clip-path:polygon(50% 0,0 100%,100% 100%)}
+.acc-brows{top:10px;left:6px;width:24px;height:4px}
+.acc-brows::before{content:'';position:absolute;left:0;width:9px;height:3px;background:#111;transform:rotate(-15deg)}
+.acc-brows::after{content:'';position:absolute;right:0;width:9px;height:3px;background:#111;transform:rotate(15deg)}
+
+/* 전략가: 왕관 */
+.acc-crown{top:-6px;left:4px;width:28px;height:12px;background:#ffd700;clip-path:polygon(0 100%,0 40%,20% 70%,35% 0,50% 50%,65% 0,80% 70%,100% 40%,100% 100%);border:none;filter:drop-shadow(0 0 3px #ffd700)}
+
+/* 편집장: 베레모 */
+.acc-beret{top:-3px;left:-1px;width:36px;height:13px;background:#3a7a3e;border-radius:50% 50% 0 0}
+.acc-beret::after{content:'';position:absolute;top:-4px;left:14px;width:8px;height:8px;background:#4a9a4e;border-radius:50%}
+
+/* 리서처: 돋보기 */
+.acc-magnify{top:6px;right:-14px;width:18px;height:18px}
+.acc-magnify::before{content:'';position:absolute;top:0;left:0;width:14px;height:14px;border:3px solid #ffa726;border-radius:50%;background:rgba(255,200,100,.2)}
+.acc-magnify::after{content:'';position:absolute;bottom:-3px;right:-3px;width:8px;height:4px;background:#bb6a00;transform:rotate(45deg)}
+
+/* 중재자: 넥타이 */
+.acc-tie{top:27px;left:13px;width:10px;height:14px;background:#26a69a;clip-path:polygon(25% 0,75% 0,100% 30%,50% 100%,0 30%)}
+
+/* 블로거: 헤드폰 */
+.acc-headphone{top:1px;left:-2px;width:38px;height:16px;border:3px solid #666;border-bottom:none;border-radius:12px 12px 0 0;background:transparent}
+.acc-headphone::before{content:'';position:absolute;bottom:-5px;left:-4px;width:8px;height:10px;background:#ff7043;border-radius:2px}
+.acc-headphone::after{content:'';position:absolute;bottom:-5px;right:-4px;width:8px;height:10px;background:#ff7043;border-radius:2px}
+
+/* 소셜: 하트 + 반짝이 */
+.acc-heart{top:-6px;right:-8px;width:14px;height:13px;background:#ec407a;clip-path:polygon(50% 100%,0 35%,0 15%,25% 0,50% 15%,75% 0,100% 15%,100% 35%);animation:heartBeat 1.5s infinite;filter:drop-shadow(0 0 4px #ec407a)}
+@keyframes heartBeat{50%{transform:scale(1.3)}}
+.acc-sparkle{top:0px;left:-8px;width:10px;height:10px;color:#ec407a;font-size:10px;animation:sparkle 2s infinite}
+@keyframes sparkle{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* 미디어: 카메라/캡 */
+.acc-cap{top:-2px;left:0px;width:34px;height:10px;background:#5e37a2;border-radius:2px}
+.acc-cap::before{content:'';position:absolute;top:-4px;left:5px;width:20px;height:5px;background:#4e2792;border-radius:3px 3px 0 0}
+.acc-visor{top:6px;left:-3px;width:14px;height:5px;background:#5e37a2;border-radius:0 0 2px 2px}
+
+/* TG봇: 로봇 안테나 + LED 눈 */
+.acc-antenna{top:-10px;left:14px;width:5px;height:14px;background:#888}
+.acc-antenna::before{content:'';position:absolute;top:-6px;left:-3px;width:10px;height:8px;background:#29b6f6;border-radius:50%;animation:antennaBlink 2s infinite}
+@keyframes antennaBlink{0%,100%{box-shadow:0 0 4px #29b6f6}50%{box-shadow:0 0 12px #29b6f6,0 0 24px #29b6f6}}
+.acc-led-eyes .pix-eye{background:#0ff;box-shadow:0 0 5px #0ff}
+.acc-panel{top:28px;left:7px;width:22px;height:10px;background:#1a1a2e;border:2px solid #29b6f6;display:flex;gap:2px;padding:1px;align-items:center;justify-content:center}
+.acc-panel i{width:4px;height:4px;background:#29b6f6;animation:ledBlink 1s infinite}
+.acc-panel i:nth-child(2){animation-delay:.3s}
+.acc-panel i:nth-child(3){animation-delay:.6s}
+@keyframes ledBlink{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* Agent walking */
+.pix-agent.walking .pix-leg:first-child{animation:legL .3s infinite}
+.pix-agent.walking .pix-leg:last-child{animation:legR .3s infinite}
+@keyframes legL{50%{transform:translateY(-3px)}}
+@keyframes legR{50%{transform:translateY(3px)}}
+.pix-agent.idle-anim{animation:pxBob 2s ease-in-out infinite}
+@keyframes pxBob{50%{transform:translateY(-2px)}}
+.pix-agent.work-anim{animation:pxWork 1s ease-in-out infinite}
+@keyframes pxWork{25%{transform:translateX(-1px)}75%{transform:translateX(1px)}}
+
+/* Speech bubble */
+.speech{position:absolute;top:-46px;left:50%;transform:translateX(-50%);background:#111e;color:#fff;font-size:13px;padding:5px 10px;border-radius:4px;white-space:nowrap;opacity:0;transition:opacity .3s;pointer-events:none;border:2px solid #666;z-index:20;max-width:200px;overflow:hidden;text-overflow:ellipsis;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.pix-agent.show-speech .speech{opacity:1}
+
+/* ── RIGHT PANEL ── */
+.panel{display:flex;flex-direction:column;background:#0f0f23;border-left:2px solid #2a2a4a;overflow:hidden}
+
+/* Tab bar */
+.tab-bar{display:flex;border-bottom:2px solid #2a2a4a;flex-shrink:0}
+.tab-btn{flex:1;padding:12px 8px;text-align:center;font-size:15px;font-weight:900;color:#555;background:transparent;border:none;cursor:pointer;font-family:'Courier New',monospace;border-bottom:3px solid transparent;transition:all .2s}
+.tab-btn:hover{color:#aaa}
+.tab-btn.active{color:#7af;border-bottom-color:#7af;background:#1a1a3e}
+
+/* Tab content */
+.tab-content{flex:1;overflow:hidden;position:relative}
+.tab-page{position:absolute;inset:0;overflow-y:auto;display:none;padding:8px}
+.tab-page.active{display:block}
+.tab-page::-webkit-scrollbar{width:4px}
+.tab-page::-webkit-scrollbar-thumb{background:#333}
+
+/* Feed (Activity Log) */
+.fi{padding:10px 12px;margin-bottom:5px;font-size:14px;border-left:3px solid #333;animation:slin .2s;background:#1a1a2e;border-radius:3px}
+.fi-t{font-size:12px;color:#666;margin-bottom:3px}
+.fi-a{display:inline-block;font-size:13px;font-weight:900;padding:2px 6px;margin:2px 0}
+.fi-m{color:#bbb;line-height:1.5;font-size:14px}
+@keyframes slin{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}
+
+/* Automation tab */
+.auto-section{margin-bottom:12px}
+.auto-hdr{font-size:15px;font-weight:900;color:#7af;padding:10px 12px;border-bottom:1px solid #2a2a4a;margin-bottom:8px}
+.auto-item{display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:4px;background:#1a1a2e;border-radius:3px;font-size:14px;border-left:3px solid #333}
+.auto-item.running{border-left-color:#4f4;background:#1a2e1a}
+.auto-item.pending{border-left-color:#fa0;background:#2e2a1a}
+.auto-item.done{border-left-color:#555}
+.auto-dot{width:8px;height:8px;flex-shrink:0}
+.auto-dot.running{background:#4f4;box-shadow:0 0 4px #4f4;animation:autoPulse 1.5s infinite}
+.auto-dot.pending{background:#fa0}
+.auto-dot.done{background:#555}
+@keyframes autoPulse{50%{opacity:.4}}
+.auto-name{flex:1;color:#ccc}
+.auto-time{font-size:12px;color:#666}
+.auto-status{font-size:12px;font-weight:900;text-transform:uppercase}
+.auto-status.running{color:#4f4}
+.auto-status.pending{color:#fa0}
+.auto-status.done{color:#666}
+
+/* Pipeline visual */
+.pipe-visual{padding:10px;margin:8px 10px;background:#1a1a2e;border-radius:4px;border:1px solid #2a2a4a}
+.pipe-step{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:14px}
+.pipe-icon{font-size:18px;width:28px;text-align:center}
+.pipe-label{flex:1;color:#aaa;font-size:14px}
+.pipe-arrow{text-align:center;color:#444;font-size:14px;padding:2px 0}
+.pipe-step.active .pipe-label{color:#4f4;font-weight:700}
+
+/* Cmd */
+.cmd{padding:8px 10px;border-top:2px solid #2a2a4a;flex-shrink:0}
+.cmd-row{display:flex;gap:5px}
+.cmd-in{flex:1;background:#1a1a2e;border:2px solid #333;padding:10px 12px;color:#e0e0e0;font-size:15px;font-family:'Courier New',monospace;outline:none}
+.cmd-in:focus{border-color:#7af}
+.cmd-go{padding:10px 16px;border:2px solid #4a4;background:#1a2e1a;color:#4f4;font-size:15px;font-weight:900;cursor:pointer;font-family:'Courier New',monospace}
+.cmd-go:hover{background:#2a3e2a}
+.cmd-acts{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+.cmd-a{padding:6px 12px;border:1px solid #333;background:transparent;color:#888;font-size:13px;cursor:pointer;font-family:'Courier New',monospace;transition:all .2s}
+.cmd-a:hover{border-color:#7af;color:#ccc}
+</style>
+</head>
+<body>
+
+<!-- STATUS BAR -->
+<div class="topbar">
+  <span class="topbar-title">🏢 Think Tank Office</span>
+  <div class="topbar-sep"></div>
+  <div id="chips"></div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="office-wrap">
+    <div class="office" id="office"></div>
+  </div>
+  <div class="panel">
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="log">📡 Activity</button>
+      <button class="tab-btn" data-tab="auto">⚡ Automation</button>
+    </div>
+    <div class="tab-content">
+      <div class="tab-page active" id="tab-log">
+        <div id="feed"></div>
+      </div>
+      <div class="tab-page" id="tab-auto">
+        <!-- 텔레그램 스케줄 -->
+        <div class="auto-section">
+          <div class="auto-hdr">📨 텔레그램 막돈방</div>
+          <div id="tg-schedule"></div>
+        </div>
+        <!-- 콘텐츠 파이프라인 -->
+        <div class="auto-section">
+          <div class="auto-hdr">🚀 콘텐츠 파이프라인</div>
+          <div class="pipe-visual">
+            <div class="pipe-step" id="pipe-blog"><span class="pipe-icon">📝</span><span class="pipe-label">Blogger 포스팅</span><span class="auto-status pending" id="pipe-blog-st">대기</span></div>
+            <div class="pipe-arrow">↓</div>
+            <div class="pipe-step" id="pipe-insta"><span class="pipe-icon">📸</span><span class="pipe-label">Instagram 카드</span><span class="auto-status pending" id="pipe-insta-st">대기</span></div>
+            <div class="pipe-arrow">↓</div>
+            <div class="pipe-step" id="pipe-shorts"><span class="pipe-icon">🎬</span><span class="pipe-label">YouTube Shorts</span><span class="auto-status pending" id="pipe-shorts-st">대기</span></div>
+          </div>
+        </div>
+        <!-- 실행 이력 -->
+        <div class="auto-section">
+          <div class="auto-hdr">📋 최근 실행 이력</div>
+          <div id="auto-history"></div>
+        </div>
+      </div>
+    </div>
+    <div class="cmd">
+      <div class="cmd-row">
+        <input class="cmd-in" id="cmd-in" placeholder="> command...">
+        <button class="cmd-go" id="cmd-go">RUN</button>
+      </div>
+      <div class="cmd-acts">
+        <button class="cmd-a" data-c="start">▶ START</button>
+        <button class="cmd-a" data-c="pause">⏸ PAUSE</button>
+        <button class="cmd-a" data-c="debate">💬 DEBATE</button>
+        <button class="cmd-a" data-c="pipeline">🚀 PIPE</button>
+        <button class="cmd-a" data-c="makdon">✈️ MAKDON</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════
+// AGENTS
+// ═══════════════════════════════════════
+const AGENTS=[
+  {id:'analyst',name:'분석가',c:'#4fc3f7',hc:'#3a9cc7',bc:'#2a7ca7',
+   tasks:['BTC 온체인 분석','거시경제 크로스체크','환율-금리 검토','유동성 지표 확인'],room:0},
+  {id:'advocate',name:'비평가',c:'#ef5350',hc:'#c73a3a',bc:'#a72a2a',
+   tasks:['반박 포인트 탐색','리스크 시뮬레이션','확증편향 체크','stress test'],room:1},
+  {id:'strategist',name:'전략가',c:'#ab47bc',hc:'#8a2aaa',bc:'#6a1a8a',
+   tasks:['로드맵 업데이트','우선순위 재정렬','수익 파이프라인 점검','ROI 분석'],room:2},
+  {id:'writer',name:'편집장',c:'#66bb6a',hc:'#4a9a4e',bc:'#3a7a3e',
+   tasks:['브리핑 초안 작성','스레드 작성','인사이트 카드 제작','콘텐츠 톤 조정'],room:3},
+  {id:'researcher',name:'리서처',c:'#ffa726',hc:'#dd8810',bc:'#bb6a00',
+   tasks:['뉴스피드 스캔','소스 신뢰도 검증','PDF 리포트 분석','온체인 수집'],room:4},
+  {id:'moderator',name:'중재자',c:'#26a69a',hc:'#1a8a7e',bc:'#106a5e',
+   tasks:['토론 안건 정리','의견 종합','합의 도출','성과 리뷰'],room:5},
+  {id:'blogger',name:'블로거',c:'#ff7043',hc:'#dd5533',bc:'#bb3322',
+   tasks:['Vibe Coding 수집','SEO 포스트 작성','Blogger 발행','품질 검수'],room:6},
+  {id:'social',name:'소셜',c:'#ec407a',hc:'#cc2255',bc:'#aa1144',
+   tasks:['인스타 카드 변환','릴스 생성','해시태그 최적화','스케줄 관리'],room:7},
+  {id:'media',name:'미디어',c:'#7e57c2',hc:'#5e37a2',bc:'#4e2792',
+   tasks:['쇼츠 변환','TTS 생성','YouTube 업로드','썸네일 생성'],room:8},
+  {id:'telegram',name:'TG봇',c:'#29b6f6',hc:'#1a96d6',bc:'#0a76b6',
+   tasks:['아침 브리핑','코인 분석','매크로 리포트','저녁 브리핑'],room:9}
+];
+
+const ROOMS=[
+  {x:6,y:6,w:210,h:155,floor:'floor-wood',label:'분석실'},
+  {x:220,y:6,w:210,h:155,floor:'floor-wood',label:'비평실'},
+  {x:434,y:6,w:210,h:155,floor:'floor-wood',label:'전략실'},
+  {x:6,y:165,w:210,h:155,floor:'floor-wood',label:'편집실'},
+  {x:220,y:165,w:210,h:155,floor:'floor-tile',label:'리서치랩'},
+  {x:648,y:6,w:226,h:230,floor:'floor-green',label:'회의실'},
+  {x:6,y:324,w:210,h:115,floor:'floor-tile',label:'블로그 스튜디오'},
+  {x:220,y:324,w:210,h:115,floor:'floor-tile',label:'소셜 스튜디오'},
+  {x:434,y:324,w:210,h:115,floor:'floor-tile',label:'미디어 스튜디오'},
+  {x:648,y:240,w:226,h:200,floor:'floor-carpet',label:'TG 자동화실'},
+  {x:434,y:165,w:210,h:155,floor:'floor-carpet',label:'휴게실'}
+];
+
+const FURNITURE=[
+  {r:0,t:'desk',x:30,y:60},{r:0,t:'desk',x:120,y:60},{r:0,t:'chair',x:44,y:92},{r:0,t:'chair',x:134,y:92},
+  {r:0,t:'monitor',x:38,y:48},{r:0,t:'monitor',x:128,y:48},{r:0,t:'plant',x:185,y:10},
+  {r:1,t:'desk',x:80,y:55},{r:1,t:'chair',x:94,y:88},{r:1,t:'monitor',x:88,y:43},
+  {r:1,t:'shelf',x:10,y:10},{r:1,t:'plant',x:185,y:10},
+  {r:2,t:'desk',x:40,y:50},{r:2,t:'desk',x:130,y:50},{r:2,t:'chair',x:54,y:82},{r:2,t:'chair',x:144,y:82},
+  {r:2,t:'monitor',x:48,y:38},{r:2,t:'monitor',x:138,y:38},{r:2,t:'wboard',x:80,y:8},
+  {r:3,t:'desk',x:80,y:50},{r:3,t:'chair',x:94,y:82},{r:3,t:'monitor',x:88,y:38},
+  {r:3,t:'shelf',x:10,y:10},{r:3,t:'shelf',x:10,y:40},{r:3,t:'plant',x:185,y:125},
+  {r:4,t:'desk',x:30,y:55},{r:4,t:'desk',x:120,y:55},{r:4,t:'chair',x:44,y:88},{r:4,t:'chair',x:134,y:88},
+  {r:4,t:'monitor',x:38,y:43},{r:4,t:'monitor',x:128,y:43},{r:4,t:'shelf',x:165,y:10},
+  {r:5,t:'mtable',x:80,y:90},{r:5,t:'plant',x:10,y:10},{r:5,t:'plant',x:200,y:10},
+  {r:5,t:'wboard',x:85,y:12},{r:5,t:'chair',x:76,y:70},{r:5,t:'chair',x:140,y:70},
+  {r:5,t:'chair',x:76,y:140},{r:5,t:'chair',x:140,y:140},{r:5,t:'chair',x:56,y:105},{r:5,t:'chair',x:160,y:105},
+  {r:6,t:'desk',x:30,y:30},{r:6,t:'chair',x:44,y:60},{r:6,t:'monitor',x:38,y:18},{r:6,t:'plant',x:180,y:10},
+  {r:7,t:'desk',x:80,y:30},{r:7,t:'chair',x:94,y:60},{r:7,t:'monitor',x:88,y:18},{r:7,t:'plant',x:10,y:80},
+  {r:8,t:'desk',x:40,y:30},{r:8,t:'desk',x:130,y:30},{r:8,t:'chair',x:54,y:60},{r:8,t:'chair',x:144,y:60},
+  {r:8,t:'monitor',x:48,y:18},{r:8,t:'monitor',x:138,y:18},
+  {r:9,t:'desk',x:40,y:60},{r:9,t:'desk',x:140,y:60},{r:9,t:'chair',x:54,y:92},{r:9,t:'chair',x:154,y:92},
+  {r:9,t:'monitor',x:48,y:48},{r:9,t:'monitor',x:148,y:48},{r:9,t:'shelf',x:10,y:10},{r:9,t:'plant',x:200,y:160},
+  {r:10,t:'couch',x:70,y:40},{r:10,t:'couch',x:70,y:90},{r:10,t:'cooler',x:185,y:20},{r:10,t:'plant',x:10,y:120},{r:10,t:'plant',x:185,y:120}
+];
+
+const WALLS=[
+  {x:6,y:161,w:428,h:6},{x:6,y:320,w:638,h:6},{x:648,y:236,w:226,h:6},
+  {x:216,y:6,w:6,h:314},{x:430,y:6,w:6,h:434},{x:644,y:6,w:6,h:434},
+];
+
+// Telegram schedule
+const TG_SCHEDULE=[
+  {time:'09:30',name:'☀️ 아침 브리핑',topic:'브리핑',days:'매일'},
+  {time:'10:30',name:'🪙 코인 분석',topic:'코인분석',days:'평일'},
+  {time:'14:00',name:'💭 KOL 인사이트',topic:'KOL',days:'평일'},
+  {time:'18:00',name:'🤖 AI 리포트',topic:'AI',days:'평일'},
+  {time:'22:00',name:'🌏 매크로 리포트',topic:'매크로',days:'평일'},
+  {time:'22:10',name:'📊 일별 요약',topic:'일별요약',days:'매일'},
+  {time:'23:40',name:'🌙 저녁 브리핑',topic:'브리핑',days:'매일'}
+];
+
+// ═══════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════
+let agents=AGENTS.map(a=>{
+  const rm=ROOMS[a.room];
+  return{...a,state:'idle',timer:2000+Math.random()*3000,task:'대기 중',done:0,
+    x:rm.x+40+Math.random()*60,y:rm.y+70+Math.random()*40,
+    tx:0,ty:0,moving:false};
+});
+let paused=false,fc=0,autoHistory=[];
+
+// ═══════════════════════════════════════
+// RENDER OFFICE
+// ═══════════════════════════════════════
+function renderOffice(){
+  const o=document.getElementById('office');
+  let h='<div class="wall-top"></div><div class="wall-bot"></div><div class="wall-left"></div><div class="wall-right"></div>';
+  ROOMS.forEach(r=>{
+    h+=`<div class="room ${r.floor}" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px">
+      <div class="room-label">${r.label||''}</div></div>`;
+  });
+  WALLS.forEach(w=>{
+    h+=`<div class="wall" style="left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px"></div>`;
+  });
+  FURNITURE.forEach(f=>{
+    const rm=ROOMS[f.r],ax=rm.x+f.x,ay=rm.y+f.y;
+    if(f.t==='desk')h+=`<div class="furn desk-px" style="left:${ax}px;top:${ay}px"></div>`;
+    else if(f.t==='chair')h+=`<div class="furn chair-px" style="left:${ax}px;top:${ay}px"></div>`;
+    else if(f.t==='plant')h+=`<div class="furn plant-px" style="left:${ax}px;top:${ay}px"></div>`;
+    else if(f.t==='shelf'){
+      const colors=['#e44','#44e','#4a4','#ea4','#a4e','#4ae'];
+      h+=`<div class="furn shelf-px" style="left:${ax}px;top:${ay}px">${colors.map(c=>`<i style="background:${c}"></i>`).join('')}</div>`;
+    }
+    else if(f.t==='monitor')h+=`<div class="furn monitor-px on" style="left:${ax}px;top:${ay}px"></div>`;
+    else if(f.t==='couch')h+=`<div class="furn couch-px" style="left:${ax}px;top:${ay}px"></div>`;
+    else if(f.t==='mtable')h+=`<div class="furn mtable-px" style="left:${ax}px;top:${ay}px"></div>`;
+    else if(f.t==='cooler')h+=`<div class="furn cooler-px" style="left:${ax}px;top:${ay}px"></div>`;
+    else if(f.t==='wboard')h+=`<div class="furn wboard-px" style="left:${ax}px;top:${ay}px"></div>`;
+  });
+  agents.forEach(a=>{
+    let acc=''; // unique accessories per agent
+    if(a.id==='analyst') acc='<div class="pix-acc acc-glasses"></div>';
+    else if(a.id==='advocate') acc='<div class="pix-acc acc-horns"></div><div class="pix-acc acc-brows"></div>';
+    else if(a.id==='strategist') acc='<div class="pix-acc acc-crown"></div>';
+    else if(a.id==='writer') acc='<div class="pix-acc acc-beret"></div>';
+    else if(a.id==='researcher') acc='<div class="pix-acc acc-magnify"></div>';
+    else if(a.id==='moderator') acc='<div class="pix-acc acc-tie"></div>';
+    else if(a.id==='blogger') acc='<div class="pix-acc acc-headphone"></div>';
+    else if(a.id==='social') acc='<div class="pix-acc acc-heart"></div><div class="pix-acc acc-sparkle">✦</div>';
+    else if(a.id==='media') acc='<div class="pix-acc acc-cap"></div><div class="pix-acc acc-visor"></div>';
+    else if(a.id==='telegram') acc='<div class="pix-acc acc-antenna"></div><div class="pix-acc acc-panel"><i></i><i></i><i></i></div>';
+    const eyeCls=a.id==='telegram'?'pix-eyes acc-led-eyes':'pix-eyes';
+    h+=`<div class="pix-agent idle-anim" id="pa-${a.id}" style="left:${a.x}px;top:${a.y}px" onclick="hlAgent('${a.id}')">
+      <div class="speech" id="sp-${a.id}"></div>
+      <div class="pix-name" style="color:${a.c}">${a.name}</div>
+      <div class="pix-body">
+        ${acc}
+        <div class="pix-head" style="background:${a.hc}"></div>
+        <div class="${eyeCls}"><div class="pix-eye"></div><div class="pix-eye"></div></div>
+        <div class="pix-torso" style="background:${a.bc}"></div>
+        <div class="pix-legs"><div class="pix-leg"></div><div class="pix-leg"></div></div>
+      </div>
+    </div>`;
+  });
+  o.innerHTML=h;
+  scaleOffice();
+}
+
+function scaleOffice(){
+  const wrap=document.querySelector('.office-wrap');
+  const ofc=document.querySelector('.office');
+  if(!wrap||!ofc)return;
+  const ww=wrap.clientWidth,wh=wrap.clientHeight;
+  const sx=ww/890,sy=wh/570;
+  const s=Math.min(sx,sy,1.2);
+  ofc.style.transform=`scale(${s})`;
+}
+
+// ═══════════════════════════════════════
+// CHIPS
+// ═══════════════════════════════════════
+function renderChips(){
+  document.getElementById('chips').innerHTML=agents.map(a=>
+    `<div class="ag-chip idle" id="ch-${a.id}" onclick="hlAgent('${a.id}')"><div class="chip-dot"></div><span class="chip-name" style="color:${a.c}">${a.name}</span><span class="chip-state">IDLE</span></div>`
+  ).join('');
+}
+
+// ═══════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════
+function initTabs(){
+  document.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.tab-page').forEach(p=>p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+    });
+  });
+}
+
+// ═══════════════════════════════════════
+// AUTOMATION TAB
+// ═══════════════════════════════════════
+function renderTGSchedule(){
+  const now=new Date();
+  const hh=now.getHours(),mm=now.getMinutes();
+  const nowMin=hh*60+mm;
+  const isWeekday=now.getDay()>0&&now.getDay()<6;
+
+  document.getElementById('tg-schedule').innerHTML=TG_SCHEDULE.map(s=>{
+    const [sh,sm]=s.time.split(':').map(Number);
+    const sMin=sh*60+sm;
+    const skip=s.days==='평일'&&!isWeekday;
+    let status,cls;
+    if(skip){status='휴일';cls='done';}
+    else if(nowMin>=sMin+30){status='완료';cls='done';}
+    else if(nowMin>=sMin-5){status='진행중';cls='running';}
+    else{status=s.time;cls='pending';}
+    return `<div class="auto-item ${cls}">
+      <div class="auto-dot ${cls}"></div>
+      <span class="auto-name">${s.name}</span>
+      <span class="auto-time">${s.time}</span>
+      <span class="auto-status ${cls}">${status}</span>
+    </div>`;
+  }).join('');
+}
+
+function addAutoHistory(msg){
+  const t=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+  autoHistory.unshift({t,msg});
+  if(autoHistory.length>20)autoHistory.pop();
+  renderAutoHistory();
+}
+
+function renderAutoHistory(){
+  document.getElementById('auto-history').innerHTML=autoHistory.map(h=>
+    `<div class="auto-item done"><span class="auto-time">${h.t}</span><span class="auto-name">${h.msg}</span></div>`
+  ).join('')||'<div style="padding:10px;color:#555;font-size:12px">아직 실행 이력이 없습니다</div>';
+}
+
+function updatePipeline(step,status){
+  const el=document.getElementById('pipe-'+step);
+  const st=document.getElementById('pipe-'+step+'-st');
+  if(!el||!st)return;
+  el.classList.toggle('active',status==='running');
+  st.className='auto-status '+status;
+  st.textContent=({running:'진행중',done:'완료',pending:'대기'})[status]||status;
+}
+
+// ═══════════════════════════════════════
+// FEED
+// ═══════════════════════════════════════
+function addF(type,idx,msg){
+  const f=document.getElementById('feed');
+  const t=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const a=idx!==null?agents[idx]:null;
+  const tag=a?`<div class="fi-a" style="color:${a.c}">${a.name}</div>`:'';
+  const el=document.createElement('div');
+  el.className='fi';
+  el.innerHTML=`<div class="fi-t">${t}</div>${tag}<div class="fi-m">${msg}</div>`;
+  f.prepend(el);
+  if(++fc>50)f.lastChild?.remove();
+}
+
+// ═══════════════════════════════════════
+// AGENT MOVEMENT
+// ═══════════════════════════════════════
+function moveAgent(i){
+  const a=agents[i],rm=ROOMS[a.room];
+  a.tx=rm.x+30+Math.random()*(rm.w-70);
+  a.ty=rm.y+40+Math.random()*(rm.h-60);
+  a.moving=true;
+  const el=document.getElementById(`pa-${a.id}`);
+  if(!el)return;
+  el.classList.remove('idle-anim','work-anim');
+  el.classList.add('walking');
+  el.style.left=a.tx+'px';
+  el.style.top=a.ty+'px';
+  setTimeout(()=>{
+    a.x=a.tx;a.y=a.ty;a.moving=false;
+    el.classList.remove('walking');
+    el.classList.add(a.state==='working'?'work-anim':'idle-anim');
+  },800);
+}
+
+// ═══════════════════════════════════════
+// STATE MACHINE
+// ═══════════════════════════════════════
+function setState(i,s){
+  const a=agents[i],prev=a.state;a.state=s;
+  const el=document.getElementById(`pa-${a.id}`);
+  const ch=document.getElementById(`ch-${a.id}`);
+  const sp=document.getElementById(`sp-${a.id}`);
+  if(!el)return;
+  if(ch){
+    ch.className=`ag-chip ${s==='working'?'working':s==='thinking'?'thinking':'idle'}`;
+    ch.querySelector('.chip-state').textContent=({idle:'IDLE',thinking:'THINK',working:'WORKING'})[s];
+  }
+  el.classList.remove('idle-anim','work-anim','walking','show-speech');
+  if(s==='working'){
+    const task=a.tasks[Math.random()*a.tasks.length|0];a.task=task;
+    el.classList.add('work-anim','show-speech');
+    if(sp)sp.textContent=task;
+    moveAgent(i);
+    addF('work',i,`<b>${task}</b>`);
+  }else if(s==='thinking'){
+    el.classList.add('idle-anim','show-speech');
+    if(sp)sp.textContent='...';
+  }else{
+    el.classList.add('idle-anim');
+    el.classList.remove('show-speech');
+    if(prev==='working'){a.done++;addF('done',i,`<b>${a.task}</b> ✅`);}
+    moveAgent(i);
+  }
+}
+
+// ═══════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════
+const DUR={idle:()=>3000+Math.random()*5000,thinking:()=>1500+Math.random()*2000,working:()=>5000+Math.random()*8000};
+const NEXT={idle:'thinking',thinking:'working',working:'idle'};
+let lt=0,ct=10000+Math.random()*15000,tgTimer=0;
+
+function tick(ts){
+  if(!lt)lt=ts;const dt=ts-lt;lt=ts;
+  if(!paused){
+    agents.forEach((a,i)=>{
+      a.timer-=dt;
+      if(a.timer<=0){const n=NEXT[a.state];setState(i,n);a.timer=DUR[n]();}
+    });
+    ct-=dt;
+    if(ct<=0){
+      const i1=Math.random()*agents.length|0;
+      let i2=(i1+1+Math.random()*(agents.length-1)|0)%agents.length;
+      setState(i1,'working');setState(i2,'working');
+      addF('collab',i1,`🤝 ${agents[i2].name}와 협업`);
+      ct=15000+Math.random()*20000;
+    }
+    // Update TG schedule every 30s
+    tgTimer-=dt;
+    if(tgTimer<=0){renderTGSchedule();tgTimer=30000;}
+  }
+  requestAnimationFrame(tick);
+}
+
+// ═══════════════════════════════════════
+// COMMANDS
+// ═══════════════════════════════════════
+function handleCmd(text){
+  if(!text.trim())return;
+  addF('cmd',null,`<span style="color:#7af">> ${text}</span>`);
+  const l=text.toLowerCase();
+  const cmds=[['/analyst|분석',0],['/advocate|반박',1],['/strategist|전략',2],['/writer|글',3],
+    ['/researcher|리서치',4],['/moderator|중재',5],['/blogger|블로그',6],['/social|인스타',7],
+    ['/media|쇼츠|영상',8],['/telegram|텔레그램|브리핑',9]];
+  for(const[p,idx]of cmds){if(p.split('|').some(k=>l.includes(k))){setState(idx,'working');hlAgent(agents[idx].id);return;}}
+  if(l.includes('막돈')||l.includes('전체발행')){
+    addF('sys',null,'✈️ <b>전체 발행 시퀀스</b>');
+    [9,0,4].forEach((ag,i)=>setTimeout(()=>setState(ag,'working'),i*3000));
+    addAutoHistory('전체 발행 시퀀스 시작');
+    // Switch to automation tab
+    document.querySelector('[data-tab="auto"]').click();
+  }else if(l.includes('파이프')||l.includes('자동화')){
+    addF('sys',null,'🚀 <b>파이프라인</b>');
+    [6,7,8].forEach((ag,i)=>setTimeout(()=>setState(ag,'working'),i*3000));
+    // Animate pipeline
+    updatePipeline('blog','running');
+    addAutoHistory('콘텐츠 파이프라인 시작');
+    setTimeout(()=>{updatePipeline('blog','done');updatePipeline('insta','running');addAutoHistory('Blogger → Instagram 변환');},5000);
+    setTimeout(()=>{updatePipeline('insta','done');updatePipeline('shorts','running');addAutoHistory('Instagram → Shorts 변환');},10000);
+    setTimeout(()=>{updatePipeline('shorts','done');addAutoHistory('파이프라인 완료 ✅');},15000);
+    document.querySelector('[data-tab="auto"]').click();
+  }else if(l.includes('토론')||l.includes('debate')){
+    addF('sys',null,'💬 <b>토론 세션</b>');
+    agents.forEach((_,i)=>setState(i,'thinking'));
+    setTimeout(()=>agents.forEach((_,i)=>setState(i,'working')),2500);
+  }else{
+    const idx=Math.random()*agents.length|0;
+    setTimeout(()=>setState(idx,'working'),300);
+  }
+}
+
+function hlAgent(id){
+  const el=document.getElementById(`pa-${id}`);
+  if(!el)return;
+  el.style.filter='brightness(1.5) drop-shadow(0 0 8px white)';
+  setTimeout(()=>el.style.filter='',2000);
+}
+
+// ═══════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════
+function init(){
+  renderOffice();renderChips();initTabs();
+  renderTGSchedule();renderAutoHistory();
+  const inp=document.getElementById('cmd-in'),go=document.getElementById('cmd-go');
+  go.addEventListener('click',()=>{handleCmd(inp.value);inp.value='';});
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter'){handleCmd(inp.value);inp.value='';}});
+  document.querySelectorAll('.cmd-a').forEach(b=>b.addEventListener('click',()=>{
+    const c=b.dataset.c;
+    if(c==='start'){paused=false;addF('sys',null,'▶ START');}
+    else if(c==='pause'){paused=true;agents.forEach((_,i)=>setState(i,'idle'));addF('sys',null,'⏸ PAUSED');}
+    else handleCmd('/'+c);
+  }));
+  window.addEventListener('resize',scaleOffice);
+  addF('sys',null,'🏢 <b>Think Tank HQ</b> online');
+  agents.forEach((a,i)=>setTimeout(()=>{setState(i,'thinking');addF('sys',i,`${a.name} 접속`);},400+i*300));
+  requestAnimationFrame(tick);
+}
+document.addEventListener('DOMContentLoaded',init);
+</script>
+</body>
+</html>
