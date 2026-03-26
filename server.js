@@ -10,7 +10,9 @@ const GH_TOKEN = process.env.GITHUB_TOKEN || '';
 const TG_BOT_TOKEN = process.env.FORUM_BOT_TOKEN || '';
 const TG_CHAT_ID = process.env.FORUM_CHAT_ID || '';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
+const BRAVE_KEY = process.env.BRAVE_SEARCH_API_KEY || '';
 const COMMAND_TOPIC_ID = 104; // 🎮 명령실 thread_id
+const NEWS_TOPIC_ID = 104; // 뉴스도 명령실에 발송 (나중에 별도 토픽 가능)
 const REPO_OWNER = 'LastMoney64';
 const REPO_NAME = 'makdon-briefing';
 
@@ -156,6 +158,163 @@ function formatDiscussion(question, results) {
   }
 
   return msgs;
+}
+
+// ── Brave Search API ──
+function braveSearch(query, count = 5) {
+  return new Promise((resolve, reject) => {
+    const searchUrl = `/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}&search_lang=ko&freshness=pd`;
+    https.get({
+      hostname: 'api.search.brave.com',
+      path: searchUrl,
+      headers: { 'Accept': 'application/json', 'X-Subscription-Token': BRAVE_KEY }
+    }, (resp) => {
+      let data = '';
+      resp.on('data', c => data += c);
+      resp.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { resolve(null); }
+      });
+    }).on('error', reject);
+  });
+}
+
+// ── 웹 페이지 텍스트 추출 (간단한 HTML 스트립) ──
+function fetchPageText(pageUrl) {
+  return new Promise((resolve) => {
+    const parsed = new URL(pageUrl);
+    const getter = parsed.protocol === 'https:' ? https : http;
+    const req = getter.get(pageUrl, { headers: { 'User-Agent': 'Mozilla/5.0 ThinkTank-Bot' }, timeout: 8000 }, (resp) => {
+      if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+        fetchPageText(resp.headers.location).then(resolve);
+        return;
+      }
+      let data = '';
+      resp.on('data', c => { data += c; if (data.length > 50000) resp.destroy(); });
+      resp.on('end', () => {
+        // 간단한 HTML → 텍스트
+        const text = data
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 5000);
+        resolve(text);
+      });
+    });
+    req.on('error', () => resolve(''));
+    req.on('timeout', () => { req.destroy(); resolve(''); });
+  });
+}
+
+// ── 텔레그램 이미지+캡션 발송 ──
+function tgSendPhoto(photoUrl, caption, threadId) {
+  if (!TG_BOT_TOKEN || !TG_CHAT_ID) return Promise.resolve();
+  const payload = JSON.stringify({
+    chat_id: TG_CHAT_ID,
+    message_thread_id: threadId || COMMAND_TOPIC_ID,
+    photo: photoUrl,
+    caption: caption.slice(0, 1024),
+    parse_mode: 'HTML'
+  });
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: 'api.telegram.org',
+      path: `/bot${TG_BOT_TOKEN}/sendPhoto`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
+    }, (resp) => {
+      let d = '';
+      resp.on('data', c => d += c);
+      resp.on('end', () => resolve(d));
+    });
+    req.on('error', () => resolve(null));
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ── /news 뉴스 분석 및 발행 ──
+async function handleNewsCommand(keyword) {
+  if (!BRAVE_KEY) throw new Error('BRAVE_SEARCH_API_KEY 미설정');
+  if (!ANTHROPIC_KEY) throw new Error('ANTHROPIC_API_KEY 미설정');
+
+  // 1. Brave Search로 최신 뉴스 검색
+  const searchResult = await braveSearch(keyword + ' 뉴스', 5);
+  const webResults = searchResult?.web?.results || [];
+
+  if (webResults.length === 0) throw new Error('검색 결과 없음');
+
+  // 상위 3개 기사 본문 수집
+  const articles = [];
+  for (const r of webResults.slice(0, 3)) {
+    const pageText = await fetchPageText(r.url);
+    articles.push({
+      title: r.title,
+      url: r.url,
+      description: r.description || '',
+      text: pageText.slice(0, 2000)
+    });
+  }
+
+  // 이미지 URL 찾기 (검색 결과에서 썸네일)
+  let imageUrl = '';
+  for (const r of webResults) {
+    if (r.thumbnail?.src) { imageUrl = r.thumbnail.src; break; }
+  }
+  // Brave 이미지 검색 fallback
+  if (!imageUrl) {
+    try {
+      const imgSearch = await braveSearch(keyword, 3);
+      const imgResults = imgSearch?.web?.results || [];
+      for (const r of imgResults) {
+        if (r.thumbnail?.src) { imageUrl = r.thumbnail.src; break; }
+      }
+    } catch {}
+  }
+
+  // 2. Claude로 뉴스 포맷팅
+  const articleContext = articles.map((a, i) =>
+    `[기사 ${i+1}] ${a.title}\nURL: ${a.url}\n${a.description}\n본문 요약: ${a.text}`
+  ).join('\n\n');
+
+  const newsFormat = await callClaude(
+    `너는 크립토/경제 뉴스 에디터야. 기사들을 분석해서 아래 형식으로 정리해.
+반드시 아래 형식을 지켜:
+
+📰 [기사 제목을 간결하게 재구성] (날짜)
+
+〔 주요 내용 〕
+- 핵심 팩트 3~5개를 불릿으로
+
+〔 배경/논거 〕
+- 왜 이게 중요한지, 관련 맥락
+- 찬반 또는 쟁점이 있으면 정리
+
+〔 현행 구조/수치 〕
+- 관련 수치, 통계, 현황 (있는 경우만)
+
+💬 Comment
+한국 투자자/시장 관점에서 2~3문장 코멘트. 확정이 아닌 건 "아직 확정 아님" 명시.
+
+출처: [매체명] (날짜)
+
+#관련해시태그 3~4개
+
+규칙:
+- HTML 태그 사용 금지, 일반 텍스트만
+- 이모지는 섹션 구분에만 사용
+- 총 길이 최대 2000자
+- 한국어로 작성`,
+    [{ role: 'user', content: `다음 기사들을 분석해서 뉴스 포스트를 만들어줘:\n\n${articleContext}` }]
+  );
+
+  return { newsFormat, imageUrl, source: articles[0]?.url || '' };
 }
 
 const MIME = {
@@ -344,6 +503,7 @@ const CMD_MAP = {
   '/status':   'status',
   '/ask':      'ask',
   '/debate':   'ask',
+  '/news':     'news',
   '/help':     'help'
 };
 
@@ -386,11 +546,45 @@ async function handleTgCommand(command, fullText) {
       `/evening - 저녁 브리핑 즉시 발행\n` +
       `/all - 전체 발행\n` +
       `/status - 오늘 발행 현황\n\n` +
-      `<b>🏛️ Think Tank 토론</b>\n` +
+      `<b>🏛️ Think Tank</b>\n` +
       `/ask [질문] - 5명 에이전트 토론\n` +
-      `예: <code>/ask 비트코인 지금 사야 할까?</code>\n\n` +
+      `/news [키워드] - 뉴스 검색 + 정리 발행\n\n` +
+      `예시:\n` +
+      `<code>/ask 비트코인 지금 사야 할까?</code>\n` +
+      `<code>/news 가상자산 과세</code>\n\n` +
       `/help - 이 도움말`
     );
+    return;
+  }
+
+  // /news 처리 — 뉴스 검색 및 발행
+  if (command === '/news') {
+    const keyword = (fullText || '').replace(/^\/news(@\w+)?\s*/i, '').trim();
+    if (!keyword) {
+      await tgSend('📰 키워드를 입력해주세요.\n예: <code>/news 비트코인 ETF</code>');
+      return;
+    }
+
+    await tgSend(`🔍 <b>"${keyword}"</b> 관련 뉴스 검색 중...`);
+
+    try {
+      const { newsFormat, imageUrl } = await handleNewsCommand(keyword);
+
+      // 이미지가 있으면 사진+캡션, 없으면 텍스트만
+      if (imageUrl) {
+        // sendPhoto 캡션은 1024자 제한 → 넘으면 사진 따로 + 텍스트 따로
+        if (newsFormat.length <= 1024) {
+          await tgSendPhoto(imageUrl, newsFormat, NEWS_TOPIC_ID);
+        } else {
+          await tgSendPhoto(imageUrl, newsFormat.slice(0, 1020) + '...', NEWS_TOPIC_ID);
+          await tgSend(newsFormat, NEWS_TOPIC_ID);
+        }
+      } else {
+        await tgSend(newsFormat, NEWS_TOPIC_ID);
+      }
+    } catch (err) {
+      await tgSend(`❌ 뉴스 생성 실패: ${err.message}`);
+    }
     return;
   }
 
