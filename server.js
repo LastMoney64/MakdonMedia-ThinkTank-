@@ -6,6 +6,9 @@ const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 const GH_TOKEN = process.env.GITHUB_TOKEN || '';
+const TG_BOT_TOKEN = process.env.FORUM_BOT_TOKEN || '';
+const TG_CHAT_ID = process.env.FORUM_CHAT_ID || '';
+const COMMAND_TOPIC_ID = 104; // 🎮 명령실 thread_id
 const REPO_OWNER = 'LastMoney64';
 const REPO_NAME = 'makdon-briefing';
 
@@ -181,10 +184,119 @@ async function handleAPI(pathname, query, req, res) {
   }
 }
 
+// ── Telegram Bot helpers ──
+const CMD_MAP = {
+  '/briefing': 'morning',
+  '/morning':  'morning',
+  '/coin':     'coin',
+  '/kol':      'kol',
+  '/ai':       'ai',
+  '/macro':    'macro',
+  '/evening':  'evening',
+  '/summary':  'summary',
+  '/all':      'all',
+  '/status':   'status'
+};
+
+function tgSend(text, threadId) {
+  if (!TG_BOT_TOKEN || !TG_CHAT_ID) return Promise.resolve();
+  const payload = JSON.stringify({
+    chat_id: TG_CHAT_ID,
+    message_thread_id: threadId || COMMAND_TOPIC_ID,
+    text,
+    parse_mode: 'HTML'
+  });
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: 'api.telegram.org',
+      path: `/bot${TG_BOT_TOKEN}/sendMessage`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
+    }, (resp) => {
+      let d = '';
+      resp.on('data', c => d += c);
+      resp.on('end', () => resolve(d));
+    });
+    req.on('error', () => resolve(null));
+    req.write(payload);
+    req.end();
+  });
+}
+
+async function handleTgCommand(command) {
+  const key = CMD_MAP[command];
+  if (!key) return;
+
+  if (key === 'status') {
+    // 오늘 발행 현황 조회
+    const result = await ghFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/actions/runs?per_page=20`);
+    const today = new Date().toISOString().slice(0, 10);
+    const todayRuns = (result.data?.workflow_runs || []).filter(r => r.created_at?.startsWith(today));
+    let msg = `📊 <b>오늘 발행 현황</b> (${today})\n\n`;
+    if (todayRuns.length === 0) {
+      msg += '아직 실행된 워크플로우가 없습니다.';
+    } else {
+      for (const r of todayRuns) {
+        const icon = r.conclusion === 'success' ? '✅' : r.conclusion === 'failure' ? '❌' : '⏳';
+        msg += `${icon} ${r.name} — ${r.conclusion || r.status}\n`;
+      }
+    }
+    await tgSend(msg);
+    return;
+  }
+
+  if (key === 'all') {
+    // 전체 발행 트리거
+    const targets = ['morning', 'coin', 'kol', 'ai', 'macro', 'evening'];
+    await tgSend('🚀 <b>전체 발행 시작</b>\n\n순차적으로 트리거합니다...');
+    for (const t of targets) {
+      const wf = WORKFLOWS[t];
+      const r = await ghPost(`/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/${wf.file}/dispatches`, { ref: 'main' });
+      const ok = r.status === 204;
+      await tgSend(`${ok ? '✅' : '❌'} ${wf.name} — ${ok ? '트리거 완료' : '실패'}`);
+    }
+    return;
+  }
+
+  // 단일 워크플로우 트리거
+  const wf = WORKFLOWS[key];
+  if (!wf) return;
+  await tgSend(`⏳ <b>${wf.name}</b> 트리거 중...`);
+  const r = await ghPost(`/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/${wf.file}/dispatches`, { ref: 'main' });
+  const ok = r.status === 204;
+  await tgSend(`${ok ? '✅' : '❌'} <b>${wf.name}</b> — ${ok ? '트리거 완료! 약 1-2분 후 발행됩니다.' : '트리거 실패. GITHUB_TOKEN을 확인하세요.'}`);
+}
+
+function readBody(req) {
+  return new Promise((resolve) => {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => resolve(body));
+  });
+}
+
 // ── Main Server ──
 const server = http.createServer((req, res) => {
   const parsed = url.parse(req.url, true);
   const pathname = parsed.pathname;
+
+  // Telegram webhook
+  if (pathname === `/webhook/telegram/${TG_BOT_TOKEN}` && req.method === 'POST') {
+    readBody(req).then(body => {
+      try {
+        const update = JSON.parse(body);
+        const msg = update.message;
+        if (msg && msg.text && msg.text.startsWith('/')) {
+          // 명령실 토픽에서 온 메시지만 처리 (또는 DM)
+          const cmd = msg.text.split('@')[0].split(' ')[0].toLowerCase();
+          handleTgCommand(cmd).catch(() => {});
+        }
+      } catch {}
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"ok":true}');
+    });
+    return;
+  }
 
   // API routes
   if (pathname.startsWith('/api/')) {
@@ -212,4 +324,23 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`Think Tank Dashboard running on port ${PORT}`);
   console.log(`GitHub integration: ${GH_TOKEN ? 'ENABLED' : 'DISABLED (set GITHUB_TOKEN)'}`);
+  console.log(`Telegram bot: ${TG_BOT_TOKEN ? 'ENABLED' : 'DISABLED (set FORUM_BOT_TOKEN)'}`);
+
+  // Auto-register Telegram webhook on startup
+  if (TG_BOT_TOKEN && process.env.RAILWAY_PUBLIC_DOMAIN) {
+    const webhookUrl = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/webhook/telegram/${TG_BOT_TOKEN}`;
+    const payload = JSON.stringify({ url: webhookUrl });
+    const req = https.request({
+      hostname: 'api.telegram.org',
+      path: `/bot${TG_BOT_TOKEN}/setWebhook`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
+    }, (resp) => {
+      let d = '';
+      resp.on('data', c => d += c);
+      resp.on('end', () => console.log('Telegram webhook:', d));
+    });
+    req.write(payload);
+    req.end();
+  }
 });
