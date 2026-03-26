@@ -9,9 +9,154 @@ const PORT = process.env.PORT || 3000;
 const GH_TOKEN = process.env.GITHUB_TOKEN || '';
 const TG_BOT_TOKEN = process.env.FORUM_BOT_TOKEN || '';
 const TG_CHAT_ID = process.env.FORUM_CHAT_ID || '';
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const COMMAND_TOPIC_ID = 104; // 🎮 명령실 thread_id
 const REPO_OWNER = 'LastMoney64';
 const REPO_NAME = 'makdon-briefing';
+
+// ── Think Tank 에이전트 정의 ──
+const AGENTS = {
+  analyst: {
+    name: '📊 분석가',
+    emoji: '📊',
+    system: `너는 "분석가"야. 데이터와 수치 기반으로만 판단해.
+- 감정을 배제하고 객관적 근거만 제시
+- 가능하면 수치, 통계, 온체인 데이터 언급
+- 확신도를 표시: 🟢높음 🟡중간 🔴낮음
+- 짧고 핵심만. 최대 200자.`
+  },
+  critic: {
+    name: '😈 비평가',
+    emoji: '😈',
+    system: `너는 "악마의 대변인(비평가)"이야. 무조건 반박부터 해.
+- 다른 에이전트 의견의 약점, 리스크, 반대 시나리오를 지적
+- "이게 틀리려면?" 관점에서 분석
+- 낙관론에는 비관, 비관론에는 낙관으로 균형
+- 짧고 날카롭게. 최대 200자.`
+  },
+  strategist: {
+    name: '👑 전략가',
+    emoji: '👑',
+    system: `너는 "전략가"야. 장기적 관점에서 전략을 제시해.
+- 단기 노이즈보다 큰 그림에 집중
+- 구체적 행동 계획 제시 (진입/청산/관망 등)
+- 리스크 대비 수익 비율 고려
+- 짧고 실행 가능하게. 최대 200자.`
+  },
+  researcher: {
+    name: '🔍 리서처',
+    emoji: '🔍',
+    system: `너는 "리서처"야. 관련 맥락과 배경 정보를 제공해.
+- 과거 유사 사례, 역사적 패턴 참조
+- 관련 인물/기관/프로젝트 동향
+- 출처 구분: [사실] vs [해석] vs [추정]
+- 짧고 정보 밀도 높게. 최대 200자.`
+  },
+  moderator: {
+    name: '🎯 중재자',
+    emoji: '🎯',
+    system: `너는 "중재자"야. 모든 에이전트의 의견을 종합해서 최종 결론을 내려.
+- 각 에이전트 의견의 핵심을 1줄로 요약
+- 합의점과 분쟁점을 명확히 구분
+- 최종 판단과 추천 행동을 제시
+- 확신도와 리스크 레벨 표시
+- 최대 300자.`
+  }
+};
+
+const DISCUSSION_ORDER = ['analyst', 'researcher', 'critic', 'strategist', 'moderator'];
+
+// ── Claude API 호출 ──
+function callClaude(systemPrompt, messages) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({
+      model: 'claude-sonnet-4-6-20250514',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages
+    });
+    const req = https.request({
+      hostname: 'api.anthropic.com',
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, (resp) => {
+      let data = '';
+      resp.on('data', c => data += c);
+      resp.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.content && parsed.content[0]) {
+            resolve(parsed.content[0].text);
+          } else {
+            reject(new Error(parsed.error?.message || 'Claude API error'));
+          }
+        } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ── Think Tank 토론 실행 ──
+async function runDiscussion(question) {
+  const results = [];
+  let conversationContext = '';
+
+  for (const agentId of DISCUSSION_ORDER) {
+    const agent = AGENTS[agentId];
+    let userMsg = `질문: ${question}`;
+
+    if (conversationContext) {
+      userMsg += `\n\n--- 이전 에이전트 의견 ---\n${conversationContext}`;
+    }
+
+    if (agentId === 'moderator') {
+      userMsg += '\n\n위 모든 의견을 종합해서 최종 결론을 내려줘.';
+    }
+
+    try {
+      const response = await callClaude(agent.system, [{ role: 'user', content: userMsg }]);
+      results.push({ agentId, name: agent.name, emoji: agent.emoji, response });
+      conversationContext += `\n${agent.name}: ${response}\n`;
+    } catch (err) {
+      results.push({ agentId, name: agent.name, emoji: agent.emoji, response: `(응답 실패: ${err.message})` });
+    }
+  }
+
+  return results;
+}
+
+// ── 토론 결과를 텔레그램 메시지로 포맷 ──
+function formatDiscussion(question, results) {
+  const msgs = [];
+
+  // 헤더
+  msgs.push(`🏛️ <b>Think Tank 토론</b>\n\n❓ <b>${question}</b>\n\n━━━━━━━━━━━━━━━`);
+
+  // 각 에이전트 의견 (중재자 제외)
+  const agentOpinions = results.filter(r => r.agentId !== 'moderator');
+  let opinionText = '';
+  for (const r of agentOpinions) {
+    opinionText += `\n${r.emoji} <b>${r.name}</b>\n${r.response}\n`;
+  }
+  msgs.push(opinionText.trim());
+
+  // 중재자 최종 결론
+  const mod = results.find(r => r.agentId === 'moderator');
+  if (mod) {
+    msgs.push(`━━━━━━━━━━━━━━━\n\n🎯 <b>최종 결론 (중재자)</b>\n\n${mod.response}`);
+  }
+
+  return msgs;
+}
 
 const MIME = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
@@ -196,7 +341,10 @@ const CMD_MAP = {
   '/evening':  'evening',
   '/summary':  'summary',
   '/all':      'all',
-  '/status':   'status'
+  '/status':   'status',
+  '/ask':      'ask',
+  '/debate':   'ask',
+  '/help':     'help'
 };
 
 function tgSend(text, threadId) {
@@ -224,7 +372,54 @@ function tgSend(text, threadId) {
   });
 }
 
-async function handleTgCommand(command) {
+async function handleTgCommand(command, fullText) {
+  // /help
+  if (command === '/help') {
+    await tgSend(
+      `🏛️ <b>막돈방 Think Tank 명령실</b>\n\n` +
+      `<b>📡 콘텐츠 발행</b>\n` +
+      `/briefing - 아침 브리핑 즉시 발행\n` +
+      `/coin - 코인 분석 즉시 발행\n` +
+      `/kol - KOL 인사이트 즉시 발행\n` +
+      `/ai - AI 리포트 즉시 발행\n` +
+      `/macro - 매크로 리포트 즉시 발행\n` +
+      `/evening - 저녁 브리핑 즉시 발행\n` +
+      `/all - 전체 발행\n` +
+      `/status - 오늘 발행 현황\n\n` +
+      `<b>🏛️ Think Tank 토론</b>\n` +
+      `/ask [질문] - 5명 에이전트 토론\n` +
+      `예: <code>/ask 비트코인 지금 사야 할까?</code>\n\n` +
+      `/help - 이 도움말`
+    );
+    return;
+  }
+
+  // /ask 처리 — 질문 텍스트 필요
+  if (command === '/ask' || command === '/debate') {
+    const question = (fullText || '').replace(/^\/(ask|debate)(@\w+)?\s*/i, '').trim();
+    if (!question) {
+      await tgSend('❓ 질문을 입력해주세요.\n예: <code>/ask 비트코인 지금 사야 할까?</code>');
+      return;
+    }
+    if (!ANTHROPIC_KEY) {
+      await tgSend('❌ ANTHROPIC_API_KEY가 설정되지 않았습니다.');
+      return;
+    }
+
+    await tgSend(`🏛️ <b>Think Tank 소집 중...</b>\n\n❓ ${question}\n\n5명의 에이전트가 분석을 시작합니다. 잠시 기다려주세요...`);
+
+    try {
+      const results = await runDiscussion(question);
+      const msgs = formatDiscussion(question, results);
+      for (const msg of msgs) {
+        await tgSend(msg);
+      }
+    } catch (err) {
+      await tgSend(`❌ Think Tank 토론 중 오류: ${err.message}`);
+    }
+    return;
+  }
+
   const key = CMD_MAP[command];
   if (!key) return;
 
@@ -290,7 +485,7 @@ const server = http.createServer((req, res) => {
         if (msg && msg.text && msg.text.startsWith('/')) {
           // 명령실 토픽에서 온 메시지만 처리 (또는 DM)
           const cmd = msg.text.split('@')[0].split(' ')[0].toLowerCase();
-          handleTgCommand(cmd).catch(() => {});
+          handleTgCommand(cmd, msg.text).catch(() => {});
         }
       } catch {}
       res.writeHead(200, { 'Content-Type': 'application/json' });
