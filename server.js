@@ -283,33 +283,41 @@ async function handleNewsCommand(keyword) {
   ).join('\n\n');
 
   const newsFormat = await callClaude(
-    `너는 크립토/경제 뉴스 에디터야. 기사들을 분석해서 아래 형식으로 정리해.
-반드시 아래 형식을 지켜:
+    `너는 텔레그램 크립토/경제 뉴스 채널 에디터야.
+기사들을 분석해서 아래 형식으로 깔끔하게 정리해.
 
-📰 [기사 제목을 간결하게 재구성] (날짜)
+형식:
 
-〔 주요 내용 〕
-- 핵심 팩트 3~5개를 불릿으로
+📌 [핵심 헤드라인 한 줄 — 간결하고 임팩트 있게]
 
-〔 배경/논거 〕
-- 왜 이게 중요한지, 관련 맥락
-- 찬반 또는 쟁점이 있으면 정리
+📋 주요 내용 요약
+• 핵심 포인트 1
+• 핵심 포인트 2
+• 핵심 포인트 3
+• 핵심 포인트 4 (필요시)
 
-〔 현행 구조/수치 〕
-- 관련 수치, 통계, 현황 (있는 경우만)
+🔍 배경/맥락
+• 왜 중요한지 1~2줄
+• 쟁점이나 찬반이 있으면 간단히
+
+📊 관련 수치 (있는 경우만)
+• 수치/통계 포인트
 
 💬 Comment
-한국 투자자/시장 관점에서 2~3문장 코멘트. 확정이 아닌 건 "아직 확정 아님" 명시.
+2~3문장. 투자자 관점 코멘트. 확정 아닌 건 명확히 표시.
 
-출처: [매체명] (날짜)
+출처: 매체명 (날짜)
 
-#관련해시태그 3~4개
+#해시태그 #3~4개
 
 규칙:
-- HTML 태그 사용 금지, 일반 텍스트만
-- 이모지는 섹션 구분에만 사용
-- 총 길이 최대 2000자
-- 한국어로 작성`,
+- HTML 태그 절대 금지, 일반 텍스트만
+- 불릿은 • 사용
+- 각 섹션 사이 빈 줄 1개
+- 문장은 짧고 간결하게 (한 불릿 최대 2줄)
+- 총 길이 최대 1500자
+- 한국어로 작성
+- 수치가 없으면 📊 섹션 생략`,
     [{ role: 'user', content: `다음 기사들을 분석해서 뉴스 포스트를 만들어줘:\n\n${articleContext}` }]
   );
 
@@ -572,18 +580,11 @@ async function handleTgCommand(command, fullText) {
       const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('60초 타임아웃')), 60000));
       const { newsFormat, imageUrl } = await Promise.race([newsPromise, timeoutPromise]);
 
-      // 이미지가 있으면 사진+캡션, 없으면 텍스트만
+      // 이미지 먼저 전송 (캡션 없이), 텍스트는 별도 메시지로
       if (imageUrl) {
-        // sendPhoto 캡션은 1024자 제한 → 넘으면 사진 따로 + 텍스트 따로
-        if (newsFormat.length <= 1024) {
-          await tgSendPhoto(imageUrl, newsFormat, NEWS_TOPIC_ID);
-        } else {
-          await tgSendPhoto(imageUrl, newsFormat.slice(0, 1020) + '...', NEWS_TOPIC_ID);
-          await tgSend(newsFormat, NEWS_TOPIC_ID);
-        }
-      } else {
-        await tgSend(newsFormat, NEWS_TOPIC_ID);
+        await tgSendPhoto(imageUrl, '', NEWS_TOPIC_ID);
       }
+      await tgSend(newsFormat, NEWS_TOPIC_ID);
     } catch (err) {
       await tgSend(`❌ 뉴스 생성 실패: ${err.message}`);
     }
