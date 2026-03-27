@@ -13,6 +13,7 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const BRAVE_KEY = process.env.BRAVE_SEARCH_API_KEY || '';
 const COMMAND_TOPIC_ID = 104; // 🎮 명령실 thread_id
 const NEWS_TOPIC_ID = 104; // 뉴스도 명령실에 발송 (나중에 별도 토픽 가능)
+const CHAT_OWNER_IDS = ['1668479932']; // 대화형 챗 허용 유저 (LastMoney)
 const REPO_OWNER = 'LastMoney64';
 const REPO_NAME = 'makdon-briefing';
 
@@ -183,9 +184,9 @@ function braveSearch(query, count = 5) {
 }
 
 // ── Brave News Search API (뉴스 전용) ──
-function braveNewsSearch(query, count = 5) {
+function braveNewsSearch(query, count = 5, freshness = 'pd') {
   return new Promise((resolve, reject) => {
-    const searchUrl = `/res/v1/news/search?q=${encodeURIComponent(query)}&count=${count}&search_lang=ko&freshness=pd`;
+    const searchUrl = `/res/v1/news/search?q=${encodeURIComponent(query)}&count=${count}&search_lang=ko&freshness=${freshness}`;
     https.get({
       hostname: 'api.search.brave.com',
       path: searchUrl,
@@ -340,15 +341,36 @@ async function handleNewsCommand(keyword) {
   const newsResult = await braveNewsSearch(keyword, 5);
   let newsResults = newsResult?.results || [];
 
-  // 커뮤니티/포럼 제외 (뉴스 기사만)
-  const EXCLUDE = ['dcinside', 'fmkorea', 'ppomppu', 'clien', 'ruliweb', 'reddit', 'namu.wiki'];
-  newsResults = newsResults.filter(r => !EXCLUDE.some(ex => (r.url || '').includes(ex)));
+  // 저품질/커뮤니티 도메인 제외
+  const EXCLUDE = ['dcinside', 'fmkorea', 'ppomppu', 'clien', 'ruliweb', 'reddit', 'namu.wiki',
+    'tistory', 'blog.naver', 'youtube.com', 'twitter.com', 'x.com', 'facebook.com'];
+  newsResults = newsResults.filter(r => !EXCLUDE.some(ex => (r.url || '').toLowerCase().includes(ex)));
+  // 중복 헤드라인 제거
+  const seenTitles = new Set();
+  newsResults = newsResults.filter(r => {
+    const key = (r.title || '').slice(0, 20);
+    if (seenTitles.has(key)) return false;
+    seenTitles.add(key);
+    return true;
+  });
 
-  // 뉴스 검색 결과 없으면 웹 검색 fallback
+  // 뉴스 검색 결과 부족 시 freshness 확장 → 웹 검색 fallback
+  if (newsResults.length < 2) {
+    const weekResult = await braveNewsSearch(keyword, 8, 'pw');
+    const weekResults = (weekResult?.results || [])
+      .filter(r => !EXCLUDE.some(ex => (r.url || '').toLowerCase().includes(ex)));
+    for (const r of weekResults) {
+      const key = (r.title || '').slice(0, 20);
+      if (!seenTitles.has(key)) {
+        seenTitles.add(key);
+        newsResults.push(r);
+      }
+    }
+  }
   if (newsResults.length === 0) {
     const webResult = await braveSearch(keyword + ' 뉴스', 5);
     const webResults = (webResult?.web?.results || [])
-      .filter(r => !EXCLUDE.some(ex => (r.url || '').includes(ex)));
+      .filter(r => !EXCLUDE.some(ex => (r.url || '').toLowerCase().includes(ex)));
     if (webResults.length === 0) throw new Error('검색 결과 없음');
     newsResults = webResults;
   }
@@ -691,9 +713,13 @@ async function handleTgCommand(command, fullText) {
       `<b>🏛️ Think Tank</b>\n` +
       `/ask [질문] - 5명 에이전트 토론\n` +
       `/news [키워드] - 뉴스 검색 + 정리 발행\n\n` +
+      `<b>💬 대화형 챗</b>\n` +
+      `슬래시 명령 없이 자유롭게 질문하세요!\n` +
+      `시장 질문은 실시간 뉴스 검색 후 답변합니다.\n\n` +
       `예시:\n` +
       `<code>/ask 비트코인 지금 사야 할까?</code>\n` +
-      `<code>/news 가상자산 과세</code>\n\n` +
+      `<code>/news 가상자산 과세</code>\n` +
+      `<code>지금 비트코인 왜 떨어져?</code>\n\n` +
       `/help - 이 도움말`
     );
     return;
@@ -796,6 +822,56 @@ async function handleTgCommand(command, fullText) {
   await tgSend(`${ok ? '✅' : '❌'} <b>${wf.name}</b> — ${ok ? '트리거 완료! 약 1-2분 후 발행됩니다.' : '트리거 실패. GITHUB_TOKEN을 확인하세요.'}`);
 }
 
+// ── 대화형 챗 핸들러 ──
+async function handleChat(userText, userName) {
+  if (!ANTHROPIC_KEY) return;
+
+  // 뉴스/시장 관련 질문 감지 → 실시간 검색 보강
+  const marketKeywords = ['비트코인', '이더리움', 'btc', 'eth', '코인', '주식', '환율', '금리', '유가', '나스닥', 'S&P', '떨어', '올라', '하락', '상승', '폭락', '급등', '왜 이렇', '무슨 일', '뉴스'];
+  const needsSearch = marketKeywords.some(kw => userText.toLowerCase().includes(kw.toLowerCase()));
+
+  let searchContext = '';
+  if (needsSearch && BRAVE_KEY) {
+    try {
+      // 핵심 키워드 추출하여 검색
+      const searchQuery = userText.replace(/[?？！!~]/g, '').slice(0, 60);
+      const newsResult = await braveNewsSearch(searchQuery, 3);
+      const results = newsResult?.results || [];
+      if (results.length > 0) {
+        searchContext = '\n\n[실시간 뉴스 검색 결과]\n' +
+          results.slice(0, 3).map(r => `• ${r.title}: ${r.description || ''}`).join('\n');
+      }
+      // 뉴스 없으면 웹 검색
+      if (!searchContext) {
+        const webResult = await braveSearch(searchQuery, 3);
+        const webResults = webResult?.web?.results || [];
+        if (webResults.length > 0) {
+          searchContext = '\n\n[실시간 웹 검색 결과]\n' +
+            webResults.slice(0, 3).map(r => `• ${r.title}: ${r.description || ''}`).join('\n');
+        }
+      }
+    } catch {}
+  }
+
+  const response = await callClaude(
+    `너는 "막돈방" 텔레그램 채널의 AI 어시스턴트야.
+크립토, 주식, AI, 거시경제에 대해 깊은 지식을 갖고 있어.
+사용자의 질문에 간결하고 핵심적으로 답변해.
+
+규칙:
+- 텔레그램 메시지이므로 300자 이내로 간결하게
+- 시장 질문이면 실시간 검색 결과를 참고해서 답변
+- 확실하지 않은 정보는 "~로 보입니다" 등 불확실성 표시
+- HTML 태그 사용 가능 (<b>, <i>, <code>)
+- 오늘 날짜: ${new Date().toISOString().slice(0, 10)}
+- 인사/잡담에는 자연스럽게 대화
+- 투자 조언이 아닌 정보 제공 관점`,
+    [{ role: 'user', content: userText + searchContext }]
+  );
+
+  await tgSend(response, COMMAND_TOPIC_ID);
+}
+
 function readBody(req) {
   return new Promise((resolve) => {
     let body = '';
@@ -815,10 +891,18 @@ const server = http.createServer((req, res) => {
       try {
         const update = JSON.parse(body);
         const msg = update.message;
-        if (msg && msg.text && msg.text.startsWith('/')) {
-          // 명령실 토픽에서 온 메시지만 처리 (또는 DM)
-          const cmd = msg.text.split('@')[0].split(' ')[0].toLowerCase();
-          handleTgCommand(cmd, msg.text).catch(() => {});
+        if (msg && msg.text) {
+          const isCommandRoom = msg.message_thread_id === COMMAND_TOPIC_ID || !msg.message_thread_id;
+          if (msg.text.startsWith('/')) {
+            // 슬래시 명령어 처리
+            const cmd = msg.text.split('@')[0].split(' ')[0].toLowerCase();
+            handleTgCommand(cmd, msg.text).catch(() => {});
+          } else if (isCommandRoom && msg.from && CHAT_OWNER_IDS.includes(String(msg.from.id))) {
+            // 명령실에서 오너의 일반 텍스트 → 대화형 챗
+            handleChat(msg.text, msg.from.first_name || '').catch(e => {
+              console.error('[Chat Error]', e.message);
+            });
+          }
         }
       } catch {}
       res.writeHead(200, { 'Content-Type': 'application/json' });
