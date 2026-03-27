@@ -84,7 +84,7 @@ function callClaude(systemPrompt, messages) {
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
+        'anthropic-version': '2024-10-22',
         'Content-Length': Buffer.byteLength(payload)
       }
     }, (resp) => {
@@ -182,31 +182,43 @@ function braveSearch(query, count = 5) {
   });
 }
 
-// ── 웹 페이지 텍스트 추출 (타임아웃 보장) ──
-function fetchPageText(pageUrl) {
+// ── 웹 페이지 텍스트 + og:image 추출 (타임아웃 보장) ──
+function fetchPage(pageUrl) {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve('(타임아웃)'), 10000);
+    const timer = setTimeout(() => resolve({ text: '(타임아웃)', ogImage: '' }), 10000);
     try {
       const parsed = new URL(pageUrl);
       const getter = parsed.protocol === 'https:' ? https : http;
       const req = getter.get(pageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 8000 }, (resp) => {
+        // 리다이렉트 처리
+        if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+          clearTimeout(timer);
+          fetchPage(resp.headers.location).then(resolve);
+          return;
+        }
         let data = '';
-        resp.on('data', c => { data += c; if (data.length > 30000) { resp.destroy(); } });
+        resp.on('data', c => { data += c; if (data.length > 50000) { resp.destroy(); } });
         resp.on('end', () => {
           clearTimeout(timer);
+          // og:image 추출
+          let ogImage = '';
+          const ogMatch = data.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)
+            || data.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+          if (ogMatch) ogImage = ogMatch[1];
+
           const text = data
             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
             .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
             .replace(/<[^>]+>/g, ' ')
             .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
             .replace(/\s+/g, ' ').trim().slice(0, 3000);
-          resolve(text);
+          resolve({ text, ogImage });
         });
-        resp.on('error', () => { clearTimeout(timer); resolve(''); });
+        resp.on('error', () => { clearTimeout(timer); resolve({ text: '', ogImage: '' }); });
       });
-      req.on('error', () => { clearTimeout(timer); resolve(''); });
-      req.on('timeout', () => { req.destroy(); clearTimeout(timer); resolve(''); });
-    } catch { clearTimeout(timer); resolve(''); }
+      req.on('error', () => { clearTimeout(timer); resolve({ text: '', ogImage: '' }); });
+      req.on('timeout', () => { req.destroy(); clearTimeout(timer); resolve({ text: '', ogImage: '' }); });
+    } catch { clearTimeout(timer); resolve({ text: '', ogImage: '' }); }
   });
 }
 
@@ -242,39 +254,33 @@ async function handleNewsCommand(keyword) {
   if (!BRAVE_KEY) throw new Error('BRAVE_SEARCH_API_KEY 미설정');
   if (!ANTHROPIC_KEY) throw new Error('ANTHROPIC_API_KEY 미설정');
 
-  // 1. Brave Search로 최신 뉴스 검색
-  const searchResult = await braveSearch(keyword + ' 뉴스', 5);
+  // 1. Brave Search로 최신 뉴스 검색 (오늘 날짜 포함)
+  const today = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const searchResult = await braveSearch(keyword + ' ' + today + ' 뉴스', 5);
   const webResults = searchResult?.web?.results || [];
 
   if (webResults.length === 0) throw new Error('검색 결과 없음');
 
-  // 상위 3개 기사 — 본문 크롤링 시도 (실패해도 description으로 진행)
+  // 상위 3개 기사 — 본문 + og:image 크롤링
   const articles = [];
+  let imageUrl = '';
   for (const r of webResults.slice(0, 3)) {
-    let pageText = '';
-    try { pageText = await fetchPageText(r.url); } catch {}
+    let page = { text: '', ogImage: '' };
+    try { page = await fetchPage(r.url); } catch {}
     articles.push({
       title: r.title,
       url: r.url,
       description: r.description || '',
-      text: pageText || r.description || ''
+      text: page.text || r.description || ''
     });
+    // 첫 번째로 발견된 og:image 사용 (가장 고화질)
+    if (!imageUrl && page.ogImage) imageUrl = page.ogImage;
   }
-
-  // 이미지 URL 찾기 (검색 결과에서 썸네일)
-  let imageUrl = '';
-  for (const r of webResults) {
-    if (r.thumbnail?.src) { imageUrl = r.thumbnail.src; break; }
-  }
-  // Brave 이미지 검색 fallback
+  // og:image 없으면 Brave 썸네일 fallback
   if (!imageUrl) {
-    try {
-      const imgSearch = await braveSearch(keyword, 3);
-      const imgResults = imgSearch?.web?.results || [];
-      for (const r of imgResults) {
-        if (r.thumbnail?.src) { imageUrl = r.thumbnail.src; break; }
-      }
-    } catch {}
+    for (const r of webResults) {
+      if (r.thumbnail?.src) { imageUrl = r.thumbnail.src; break; }
+    }
   }
 
   // 2. Claude로 뉴스 포맷팅
@@ -282,13 +288,25 @@ async function handleNewsCommand(keyword) {
     `[기사 ${i+1}] ${a.title}\nURL: ${a.url}\n${a.description}\n본문 요약: ${a.text}`
   ).join('\n\n');
 
-  const newsFormat = await callClaude(
+  // 캡션용 짧은 헤드라인 (이미지와 함께 표시)
+  const captionPrompt = await callClaude(
+    `너는 뉴스 헤드라인 에디터야. 기사를 읽고 한 줄 헤드라인을 만들어.
+규칙:
+- 최대 80자
+- 임팩트 있고 핵심만
+- HTML 태그 금지
+- 이모지 1개만 앞에
+- 한국어로 작성
+- 출처 매체명 포함`,
+    [{ role: 'user', content: `헤드라인 만들어줘:\n\n${articles[0]?.title}\n${articles[0]?.description}` }]
+  );
+
+  // 본문 (별도 메시지)
+  const newsBody = await callClaude(
     `너는 텔레그램 크립토/경제 뉴스 채널 에디터야.
 기사들을 분석해서 아래 형식으로 깔끔하게 정리해.
 
 형식:
-
-📌 [핵심 헤드라인 한 줄 — 간결하고 임팩트 있게]
 
 📋 주요 내용 요약
 • 핵심 포인트 1
@@ -306,7 +324,7 @@ async function handleNewsCommand(keyword) {
 💬 Comment
 2~3문장. 투자자 관점 코멘트. 확정 아닌 건 명확히 표시.
 
-출처: 매체명 (날짜)
+출처: 매체명 (년월일)
 
 #해시태그 #3~4개
 
@@ -317,11 +335,12 @@ async function handleNewsCommand(keyword) {
 - 문장은 짧고 간결하게 (한 불릿 최대 2줄)
 - 총 길이 최대 1500자
 - 한국어로 작성
-- 수치가 없으면 📊 섹션 생략`,
+- 수치가 없으면 📊 섹션 생략
+- 오늘은 ${new Date().toISOString().slice(0, 10)}이다. 기사 날짜를 정확히 표기해.`,
     [{ role: 'user', content: `다음 기사들을 분석해서 뉴스 포스트를 만들어줘:\n\n${articleContext}` }]
   );
 
-  return { newsFormat, imageUrl, source: articles[0]?.url || '' };
+  return { caption: captionPrompt, newsBody, imageUrl, source: articles[0]?.url || '' };
 }
 
 const MIME = {
@@ -578,13 +597,15 @@ async function handleTgCommand(command, fullText) {
       // 전체 60초 타임아웃
       const newsPromise = handleNewsCommand(keyword);
       const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('60초 타임아웃')), 60000));
-      const { newsFormat, imageUrl } = await Promise.race([newsPromise, timeoutPromise]);
+      const { caption, newsBody, imageUrl } = await Promise.race([newsPromise, timeoutPromise]);
 
-      // 이미지 먼저 전송 (캡션 없이), 텍스트는 별도 메시지로
+      // 이미지+캡션 함께 전송, 본문은 별도 메시지
       if (imageUrl) {
-        await tgSendPhoto(imageUrl, '', NEWS_TOPIC_ID);
+        await tgSendPhoto(imageUrl, caption.slice(0, 1024), NEWS_TOPIC_ID);
+      } else {
+        await tgSend(caption, NEWS_TOPIC_ID);
       }
-      await tgSend(newsFormat, NEWS_TOPIC_ID);
+      await tgSend(newsBody, NEWS_TOPIC_ID);
     } catch (err) {
       await tgSend(`❌ 뉴스 생성 실패: ${err.message}`);
     }
