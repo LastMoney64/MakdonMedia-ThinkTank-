@@ -72,7 +72,7 @@ const DISCUSSION_ORDER = ['analyst', 'researcher', 'critic', 'strategist', 'mode
 function callClaude(systemPrompt, messages) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-3-5-haiku-20241022',
       max_tokens: 1024,
       system: systemPrompt,
       messages
@@ -179,36 +179,31 @@ function braveSearch(query, count = 5) {
   });
 }
 
-// ── 웹 페이지 텍스트 추출 (간단한 HTML 스트립) ──
+// ── 웹 페이지 텍스트 추출 (타임아웃 보장) ──
 function fetchPageText(pageUrl) {
   return new Promise((resolve) => {
-    const parsed = new URL(pageUrl);
-    const getter = parsed.protocol === 'https:' ? https : http;
-    const req = getter.get(pageUrl, { headers: { 'User-Agent': 'Mozilla/5.0 ThinkTank-Bot' }, timeout: 8000 }, (resp) => {
-      if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
-        fetchPageText(resp.headers.location).then(resolve);
-        return;
-      }
-      let data = '';
-      resp.on('data', c => { data += c; if (data.length > 50000) resp.destroy(); });
-      resp.on('end', () => {
-        // 간단한 HTML → 텍스트
-        const text = data
-          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-          .replace(/<[^>]+>/g, ' ')
-          .replace(/&nbsp;/g, ' ')
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 5000);
-        resolve(text);
+    const timer = setTimeout(() => resolve('(타임아웃)'), 10000);
+    try {
+      const parsed = new URL(pageUrl);
+      const getter = parsed.protocol === 'https:' ? https : http;
+      const req = getter.get(pageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 8000 }, (resp) => {
+        let data = '';
+        resp.on('data', c => { data += c; if (data.length > 30000) { resp.destroy(); } });
+        resp.on('end', () => {
+          clearTimeout(timer);
+          const text = data
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+            .replace(/\s+/g, ' ').trim().slice(0, 3000);
+          resolve(text);
+        });
+        resp.on('error', () => { clearTimeout(timer); resolve(''); });
       });
-    });
-    req.on('error', () => resolve(''));
-    req.on('timeout', () => { req.destroy(); resolve(''); });
+      req.on('error', () => { clearTimeout(timer); resolve(''); });
+      req.on('timeout', () => { req.destroy(); clearTimeout(timer); resolve(''); });
+    } catch { clearTimeout(timer); resolve(''); }
   });
 }
 
@@ -250,15 +245,16 @@ async function handleNewsCommand(keyword) {
 
   if (webResults.length === 0) throw new Error('검색 결과 없음');
 
-  // 상위 3개 기사 본문 수집
+  // 상위 3개 기사 — 본문 크롤링 시도 (실패해도 description으로 진행)
   const articles = [];
   for (const r of webResults.slice(0, 3)) {
-    const pageText = await fetchPageText(r.url);
+    let pageText = '';
+    try { pageText = await fetchPageText(r.url); } catch {}
     articles.push({
       title: r.title,
       url: r.url,
       description: r.description || '',
-      text: pageText.slice(0, 2000)
+      text: pageText || r.description || ''
     });
   }
 
@@ -568,7 +564,10 @@ async function handleTgCommand(command, fullText) {
     await tgSend(`🔍 <b>"${keyword}"</b> 관련 뉴스 검색 중...`);
 
     try {
-      const { newsFormat, imageUrl } = await handleNewsCommand(keyword);
+      // 전체 60초 타임아웃
+      const newsPromise = handleNewsCommand(keyword);
+      const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('60초 타임아웃')), 60000));
+      const { newsFormat, imageUrl } = await Promise.race([newsPromise, timeoutPromise]);
 
       // 이미지가 있으면 사진+캡션, 없으면 텍스트만
       if (imageUrl) {
