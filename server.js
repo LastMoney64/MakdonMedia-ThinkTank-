@@ -17,6 +17,29 @@ const CHAT_OWNER_IDS = ['1668479932']; // 대화형 챗 허용 유저 (LastMoney
 const REPO_OWNER = 'LastMoney64';
 const REPO_NAME = 'makdon-briefing';
 
+// ── /news 커스텀 이모지 ──
+const NEWS_CE = {
+  headline: '<tg-emoji emoji-id="5787657036258872916">📢</tg-emoji>',
+  summary:  '<tg-emoji emoji-id="5801171696316583596">📝</tg-emoji>',
+  comment:  '<tg-emoji emoji-id="5213322863997627593">🤔</tg-emoji>',
+  link:     '<tg-emoji emoji-id="5215330331711775720">➡️</tg-emoji>',
+};
+
+function applyNewsEmojis(text, sourceUrl) {
+  // 헤드라인: 📢 + 볼드
+  text = text.replace(/^📌\s*(.+)$/m, `<b>${NEWS_CE.headline} $1</b>`);
+  // 주요 내용 요약: blockquote + 📝 + 볼드
+  text = text.replace(/📋\s*주요 내용 요약/, `<blockquote><b>${NEWS_CE.summary} 주요 내용 요약</b></blockquote>`);
+  // Comment: 🤔 + 볼드
+  text = text.replace(/💬\s*Comment/, `<b>${NEWS_CE.comment} Comment</b>`);
+  // 기사보러가기 링크
+  if (sourceUrl) {
+    text = text.replace(/\n*🔗\s*기사보러가기\s*$/, '');
+    text += `\n\n${NEWS_CE.link} <a href="${sourceUrl}">기사보러가기</a>`;
+  }
+  return text;
+}
+
 // ── Think Tank 에이전트 정의 ──
 const AGENTS = {
   analyst: {
@@ -328,9 +351,9 @@ async function handleNewsCommand(keyword) {
       [{ role: 'user', content: `이 기사를 분석해줘:\n\n${articleContext}` }]
     );
 
-    let caption = newsText + '\n\n<a href="' + sourceUrl + '">🔗 기사보러가기</a>';
+    let caption = applyNewsEmojis(newsText, sourceUrl);
     if (caption.length > 1024) {
-      caption = newsText.slice(0, 900) + '...\n\n<a href="' + sourceUrl + '">🔗 기사보러가기</a>';
+      caption = applyNewsEmojis(newsText.slice(0, 800), sourceUrl);
     }
     return { caption, imageUrl };
   }
@@ -441,10 +464,10 @@ async function handleNewsCommand(keyword) {
     [{ role: 'user', content: `뉴스 포스트 만들어줘:\n\n${articleContext}` }]
   );
 
-  // 캡션 = 본문 + 기사 링크 (HTML 링크, 1024자 이내)
-  let caption = newsText + '\n\n<a href="' + sourceUrl + '">🔗 기사보러가기</a>';
+  // 캡션 = 커스텀 이모지 적용 + 기사 링크 (1024자 이내)
+  let caption = applyNewsEmojis(newsText, sourceUrl);
   if (caption.length > 1024) {
-    caption = newsText.slice(0, 900) + '...\n\n<a href="' + sourceUrl + '">🔗 기사보러가기</a>';
+    caption = applyNewsEmojis(newsText.slice(0, 800), sourceUrl);
   }
 
   return { caption, imageUrl };
