@@ -343,8 +343,6 @@ async function handleNewsCommand(keyword) {
 💬 Comment
 1~2문장. 투자자 관점. 확정 아닌 건 명시.
 
-출처: 매체명 (년월일)
-
 #해시태그 #3개
 
 규칙:
@@ -358,10 +356,10 @@ async function handleNewsCommand(keyword) {
     [{ role: 'user', content: `뉴스 포스트 만들어줘:\n\n${articleContext}` }]
   );
 
-  // 캡션 = 본문 + 기사 링크 (1024자 이내)
-  let caption = newsText + '\n\n🔗 기사보러가기: ' + sourceUrl;
+  // 캡션 = 본문 + 기사 링크 (HTML 링크, 1024자 이내)
+  let caption = newsText + '\n\n<a href="' + sourceUrl + '">🔗 기사보러가기</a>';
   if (caption.length > 1024) {
-    caption = newsText.slice(0, 1024 - sourceUrl.length - 25) + '...\n\n🔗 기사보러가기: ' + sourceUrl;
+    caption = newsText.slice(0, 900) + '...\n\n<a href="' + sourceUrl + '">🔗 기사보러가기</a>';
   }
 
   return { caption, imageUrl };
