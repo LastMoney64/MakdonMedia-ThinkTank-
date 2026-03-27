@@ -288,25 +288,15 @@ async function handleNewsCommand(keyword) {
     `[기사 ${i+1}] ${a.title}\nURL: ${a.url}\n${a.description}\n본문 요약: ${a.text}`
   ).join('\n\n');
 
-  // 캡션용 짧은 헤드라인 (이미지와 함께 표시)
-  const captionPrompt = await callClaude(
-    `너는 뉴스 헤드라인 에디터야. 기사를 읽고 한 줄 헤드라인을 만들어.
-규칙:
-- 최대 80자
-- 임팩트 있고 핵심만
-- HTML 태그 금지
-- 이모지 1개만 앞에
-- 한국어로 작성
-- 출처 매체명 포함`,
-    [{ role: 'user', content: `헤드라인 만들어줘:\n\n${articles[0]?.title}\n${articles[0]?.description}` }]
-  );
-
-  // 본문 (별도 메시지)
-  const newsBody = await callClaude(
+  // Claude로 뉴스 포맷팅 (1회 호출)
+  const sourceUrl = articles[0]?.url || '';
+  const newsText = await callClaude(
     `너는 텔레그램 크립토/경제 뉴스 채널 에디터야.
 기사들을 분석해서 아래 형식으로 깔끔하게 정리해.
 
 형식:
+
+📌 [핵심 헤드라인 한 줄]
 
 📋 주요 내용 요약
 • 핵심 포인트 1
@@ -340,7 +330,10 @@ async function handleNewsCommand(keyword) {
     [{ role: 'user', content: `다음 기사들을 분석해서 뉴스 포스트를 만들어줘:\n\n${articleContext}` }]
   );
 
-  return { caption: captionPrompt, newsBody, imageUrl, source: articles[0]?.url || '' };
+  // 기사 링크를 맨 앞에 붙여서 텔레그램 링크 프리뷰 자동 생성
+  const fullMessage = sourceUrl + '\n\n' + newsText;
+
+  return { fullMessage };
 }
 
 const MIME = {
@@ -597,15 +590,10 @@ async function handleTgCommand(command, fullText) {
       // 전체 60초 타임아웃
       const newsPromise = handleNewsCommand(keyword);
       const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('60초 타임아웃')), 60000));
-      const { caption, newsBody, imageUrl } = await Promise.race([newsPromise, timeoutPromise]);
+      const { fullMessage } = await Promise.race([newsPromise, timeoutPromise]);
 
-      // 이미지+캡션 함께 전송, 본문은 별도 메시지
-      if (imageUrl) {
-        await tgSendPhoto(imageUrl, caption.slice(0, 1024), NEWS_TOPIC_ID);
-      } else {
-        await tgSend(caption, NEWS_TOPIC_ID);
-      }
-      await tgSend(newsBody, NEWS_TOPIC_ID);
+      // 기사 URL + 본문을 1개 메시지로 전송 (텔레그램이 링크 프리뷰 자동 생성)
+      await tgSend(fullMessage, NEWS_TOPIC_ID);
     } catch (err) {
       await tgSend(`❌ 뉴스 생성 실패: ${err.message}`);
     }
