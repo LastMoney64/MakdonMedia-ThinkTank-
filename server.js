@@ -84,7 +84,7 @@ function callClaude(systemPrompt, messages) {
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2024-10-22',
+        'anthropic-version': '2023-06-01',
         'Content-Length': Buffer.byteLength(payload)
       }
     }, (resp) => {
