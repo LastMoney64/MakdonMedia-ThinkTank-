@@ -208,7 +208,7 @@ function fetchPage(pageUrl) {
     try {
       const parsed = new URL(pageUrl);
       const getter = parsed.protocol === 'https:' ? https : http;
-      const req = getter.get(pageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 8000 }, (resp) => {
+      const req = getter.get(pageUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' }, timeout: 8000 }, (resp) => {
         // 리다이렉트 처리
         if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
           clearTimeout(timer);
@@ -275,12 +275,31 @@ async function handleNewsCommand(keyword) {
   // URL 직접 전달 감지 — 해당 기사를 바로 크롤링
   const isUrl = keyword.startsWith('http://') || keyword.startsWith('https://');
   if (isUrl) {
-    const page = await fetchPage(keyword);
-    if (!page.text || page.text === '(타임아웃)') throw new Error('기사 페이지를 불러올 수 없습니다');
+    let page = await fetchPage(keyword);
+    let articleText = page.text || '';
+    let imageUrl = (page.ogImage && !page.ogImage.match(/logo|icon|favicon|brand/i)) ? page.ogImage : '';
 
-    const articleContext = `[기사] ${keyword}\n본문: ${page.text}`;
+    // 크롤링 실패 시 Brave 검색으로 기사 내용 확보
+    if (!articleText || articleText === '(타임아웃)' || articleText.length < 100) {
+      try {
+        // URL에서 도메인+제목 추출하여 검색
+        const domain = new URL(keyword).hostname.replace('www.', '');
+        const searchResult = await braveSearch('site:' + domain + ' ' + keyword, 3);
+        const found = searchResult?.web?.results?.[0];
+        if (found) {
+          articleText = found.description || '';
+          // 해당 검색 결과 페이지도 크롤링 시도
+          const page2 = await fetchPage(found.url || keyword);
+          if (page2.text && page2.text.length > articleText.length) articleText = page2.text;
+          if (!imageUrl && page2.ogImage && !page2.ogImage.match(/logo|icon|favicon|brand/i)) imageUrl = page2.ogImage;
+        }
+      } catch {}
+    }
+
+    if (!articleText || articleText.length < 50) throw new Error('기사 내용을 가져올 수 없습니다. 다른 기사 링크를 시도해주세요.');
+
+    const articleContext = `[기사] ${keyword}\n본문: ${articleText}`;
     const sourceUrl = keyword;
-    const imageUrl = (page.ogImage && !page.ogImage.match(/logo|icon|favicon|brand/i)) ? page.ogImage : '';
 
     const newsText = await callClaude(
       `너는 텔레그램 크립토/경제 뉴스 채널 에디터야.
