@@ -96,12 +96,15 @@ function callClaude(systemPrompt, messages) {
           if (parsed.content && parsed.content[0]) {
             resolve(parsed.content[0].text);
           } else {
-            reject(new Error(parsed.error?.message || 'Claude API error'));
+            // 상세 에러 출력
+            const errMsg = parsed.error?.message || JSON.stringify(parsed).slice(0, 300);
+            console.error('[Claude API Error]', JSON.stringify(parsed).slice(0, 500));
+            reject(new Error(errMsg));
           }
-        } catch (e) { reject(e); }
+        } catch (e) { reject(new Error('JSON 파싱 실패: ' + data.slice(0, 200))); }
       });
     });
-    req.on('error', reject);
+    req.on('error', (e) => reject(new Error('네트워크 오류: ' + e.message)));
     req.write(payload);
     req.end();
   });
