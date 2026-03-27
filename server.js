@@ -270,8 +270,52 @@ function tgSendPhoto(photoUrl, caption, threadId) {
 
 // ── /news 뉴스 분석 및 발행 ──
 async function handleNewsCommand(keyword) {
-  if (!BRAVE_KEY) throw new Error('BRAVE_SEARCH_API_KEY 미설정');
   if (!ANTHROPIC_KEY) throw new Error('ANTHROPIC_API_KEY 미설정');
+
+  // URL 직접 전달 감지 — 해당 기사를 바로 크롤링
+  const isUrl = keyword.startsWith('http://') || keyword.startsWith('https://');
+  if (isUrl) {
+    const page = await fetchPage(keyword);
+    if (!page.text || page.text === '(타임아웃)') throw new Error('기사 페이지를 불러올 수 없습니다');
+
+    const articleContext = `[기사] ${keyword}\n본문: ${page.text}`;
+    const sourceUrl = keyword;
+    const imageUrl = (page.ogImage && !page.ogImage.match(/logo|icon|favicon|brand/i)) ? page.ogImage : '';
+
+    const newsText = await callClaude(
+      `너는 텔레그램 크립토/경제 뉴스 채널 에디터야.
+기사를 분석해서 아래 형식으로 정리해. 반드시 900자 이내로.
+
+형식:
+
+📌 [핵심 헤드라인 한 줄]
+
+📋 주요 내용 요약
+• 핵심 3~4개 (각 1줄)
+
+💬 Comment
+1~2문장. 투자자 관점. 확정 아닌 건 명시.
+
+#해시태그 #3개
+
+규칙:
+- HTML 태그 금지, 일반 텍스트만
+- 불릿은 • 사용
+- 반드시 900자 이내
+- 한국어
+- 오늘은 ${new Date().toISOString().slice(0, 10)}
+- 메타 코멘트 금지. 뉴스 내용만.`,
+      [{ role: 'user', content: `이 기사를 분석해줘:\n\n${articleContext}` }]
+    );
+
+    let caption = newsText + '\n\n<a href="' + sourceUrl + '">🔗 기사보러가기</a>';
+    if (caption.length > 1024) {
+      caption = newsText.slice(0, 900) + '...\n\n<a href="' + sourceUrl + '">🔗 기사보러가기</a>';
+    }
+    return { caption, imageUrl };
+  }
+
+  if (!BRAVE_KEY) throw new Error('BRAVE_SEARCH_API_KEY 미설정');
 
   // 1. Brave News Search로 최신 뉴스 기사 검색
   const newsResult = await braveNewsSearch(keyword, 5);
