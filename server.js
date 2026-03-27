@@ -72,7 +72,7 @@ const DISCUSSION_ORDER = ['analyst', 'researcher', 'critic', 'strategist', 'mode
 function callClaude(systemPrompt, messages) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({
-      model: 'claude-3-5-haiku-20241022',
+      model: 'claude-3-haiku-20240307',
       max_tokens: 1024,
       system: systemPrompt,
       messages
