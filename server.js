@@ -163,10 +163,29 @@ function formatDiscussion(question, results) {
   return msgs;
 }
 
-// ── Brave Search API ──
+// ── Brave Search API (웹 검색) ──
 function braveSearch(query, count = 5) {
   return new Promise((resolve, reject) => {
     const searchUrl = `/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}&search_lang=ko&freshness=pd`;
+    https.get({
+      hostname: 'api.search.brave.com',
+      path: searchUrl,
+      headers: { 'Accept': 'application/json', 'X-Subscription-Token': BRAVE_KEY }
+    }, (resp) => {
+      let data = '';
+      resp.on('data', c => data += c);
+      resp.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { resolve(null); }
+      });
+    }).on('error', reject);
+  });
+}
+
+// ── Brave News Search API (뉴스 전용) ──
+function braveNewsSearch(query, count = 5) {
+  return new Promise((resolve, reject) => {
+    const searchUrl = `/res/v1/news/search?q=${encodeURIComponent(query)}&count=${count}&search_lang=ko&freshness=pd`;
     https.get({
       hostname: 'api.search.brave.com',
       path: searchUrl,
@@ -254,17 +273,26 @@ async function handleNewsCommand(keyword) {
   if (!BRAVE_KEY) throw new Error('BRAVE_SEARCH_API_KEY 미설정');
   if (!ANTHROPIC_KEY) throw new Error('ANTHROPIC_API_KEY 미설정');
 
-  // 1. Brave Search로 최신 뉴스 검색 (오늘 날짜 포함)
-  const today = new Date().toISOString().slice(0, 7); // YYYY-MM
-  const searchResult = await braveSearch(keyword + ' ' + today + ' 뉴스', 5);
-  const webResults = searchResult?.web?.results || [];
+  // 1. Brave News Search로 최신 뉴스 기사 검색
+  const newsResult = await braveNewsSearch(keyword, 5);
+  let newsResults = newsResult?.results || [];
 
-  if (webResults.length === 0) throw new Error('검색 결과 없음');
+  // 커뮤니티/포럼 제외 (뉴스 기사만)
+  const EXCLUDE = ['dcinside', 'fmkorea', 'ppomppu', 'clien', 'ruliweb', 'reddit', 'namu.wiki'];
+  newsResults = newsResults.filter(r => !EXCLUDE.some(ex => (r.url || '').includes(ex)));
+
+  // 뉴스 검색 결과 없으면 웹 검색 fallback
+  if (newsResults.length === 0) {
+    const webResult = await braveSearch(keyword + ' 뉴스', 5);
+    const webResults = (webResult?.web?.results || [])
+      .filter(r => !EXCLUDE.some(ex => (r.url || '').includes(ex)));
+    if (webResults.length === 0) throw new Error('검색 결과 없음');
+    newsResults = webResults;
+  }
 
   // 상위 3개 기사 — 본문 + og:image 크롤링
   const articles = [];
-  let imageUrl = '';
-  for (const r of webResults.slice(0, 3)) {
+  for (const r of newsResults.slice(0, 3)) {
     let page = { text: '', ogImage: '' };
     try { page = await fetchPage(r.url); } catch {}
     articles.push({
@@ -273,14 +301,6 @@ async function handleNewsCommand(keyword) {
       description: r.description || '',
       text: page.text || r.description || ''
     });
-    // 첫 번째로 발견된 og:image 사용 (가장 고화질)
-    if (!imageUrl && page.ogImage) imageUrl = page.ogImage;
-  }
-  // og:image 없으면 Brave 썸네일 fallback
-  if (!imageUrl) {
-    for (const r of webResults) {
-      if (r.thumbnail?.src) { imageUrl = r.thumbnail.src; break; }
-    }
   }
 
   // 2. Claude로 뉴스 포맷팅
@@ -331,7 +351,7 @@ async function handleNewsCommand(keyword) {
   );
 
   // 기사 링크를 맨 앞에 붙여서 텔레그램 링크 프리뷰 자동 생성
-  const fullMessage = sourceUrl + '\n\n' + newsText;
+  const fullMessage = sourceUrl + '\n\n' + newsText + '\n\n🔗 기사보러가기';
 
   return { fullMessage };
 }
