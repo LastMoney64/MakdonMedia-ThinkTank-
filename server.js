@@ -292,6 +292,7 @@ async function handleNewsCommand(keyword) {
 
   // 상위 3개 기사 — 본문 + og:image 크롤링
   const articles = [];
+  let imageUrl = '';
   for (const r of newsResults.slice(0, 3)) {
     let page = { text: '', ogImage: '' };
     try { page = await fetchPage(r.url); } catch {}
@@ -299,8 +300,27 @@ async function handleNewsCommand(keyword) {
       title: r.title,
       url: r.url,
       description: r.description || '',
-      text: page.text || r.description || ''
+      text: page.text || r.description || '',
+      ogImage: page.ogImage || ''
     });
+    // og:image 중 로고가 아닌 첫 번째 이미지 사용
+    if (!imageUrl && page.ogImage && !page.ogImage.match(/logo|icon|favicon|brand/i)) {
+      imageUrl = page.ogImage;
+    }
+  }
+
+  // og:image가 없거나 로고뿐이면 Brave 이미지 검색 fallback
+  if (!imageUrl) {
+    try {
+      const imgResult = await braveSearch(keyword + ' 뉴스 사진', 5);
+      const imgResults = imgResult?.web?.results || [];
+      for (const r of imgResults) {
+        if (r.thumbnail?.src && !r.thumbnail.src.match(/logo|icon|favicon/i)) {
+          imageUrl = r.thumbnail.src;
+          break;
+        }
+      }
+    } catch {}
   }
 
   // 2. Claude로 뉴스 포맷팅
@@ -308,54 +328,43 @@ async function handleNewsCommand(keyword) {
     `[기사 ${i+1}] ${a.title}\nURL: ${a.url}\n${a.description}\n본문 요약: ${a.text}`
   ).join('\n\n');
 
-  // Claude로 뉴스 포맷팅 (1회 호출)
   const sourceUrl = articles[0]?.url || '';
   const newsText = await callClaude(
     `너는 텔레그램 크립토/경제 뉴스 채널 에디터야.
-기사들을 분석해서 아래 형식으로 깔끔하게 정리해.
+기사를 분석해서 아래 형식으로 정리해. 반드시 900자 이내로.
 
 형식:
 
 📌 [핵심 헤드라인 한 줄]
 
 📋 주요 내용 요약
-• 핵심 포인트 1
-• 핵심 포인트 2
-• 핵심 포인트 3
-• 핵심 포인트 4 (필요시)
-
-🔍 배경/맥락
-• 왜 중요한지 1~2줄
-• 쟁점이나 찬반이 있으면 간단히
-
-📊 관련 수치 (있는 경우만)
-• 수치/통계 포인트
+• 핵심 3~4개 (각 1줄)
 
 💬 Comment
-2~3문장. 투자자 관점 코멘트. 확정 아닌 건 명확히 표시.
+1~2문장. 투자자 관점. 확정 아닌 건 명시.
 
 출처: 매체명 (년월일)
 
-#해시태그 #3~4개
+#해시태그 #3개
 
 규칙:
-- HTML 태그 절대 금지, 일반 텍스트만
+- HTML 태그 금지, 일반 텍스트만
 - 불릿은 • 사용
-- 각 섹션 사이 빈 줄 1개
-- 문장은 짧고 간결하게 (한 불릿 최대 2줄)
-- 총 길이 최대 1500자
-- 한국어로 작성
-- 수치가 없으면 📊 섹션 생략
-- 오늘은 ${new Date().toISOString().slice(0, 10)}이다. 기사 날짜를 정확히 표기해.
-- "기사 X는 무관하여 제외" 같은 메타 코멘트 절대 포함 금지. 오직 뉴스 분석 내용만 출력.
-- 가장 관련성 높은 기사 1~2개만 집중 분석. 무관한 기사는 무시.`,
-    [{ role: 'user', content: `다음 기사들을 분석해서 뉴스 포스트를 만들어줘:\n\n${articleContext}` }]
+- 반드시 900자 이내 (엄수)
+- 한국어
+- 오늘은 ${new Date().toISOString().slice(0, 10)}
+- 메타 코멘트 금지. 뉴스 내용만.
+- 가장 관련 높은 기사 1개만 집중.`,
+    [{ role: 'user', content: `뉴스 포스트 만들어줘:\n\n${articleContext}` }]
   );
 
-  // 본문 + 하단에 기사 링크
-  const fullMessage = newsText + '\n\n🔗 <a href="' + sourceUrl + '">기사보러가기</a>';
+  // 캡션 = 본문 + 기사 링크 (1024자 이내)
+  let caption = newsText + '\n\n🔗 기사보러가기: ' + sourceUrl;
+  if (caption.length > 1024) {
+    caption = newsText.slice(0, 1024 - sourceUrl.length - 25) + '...\n\n🔗 기사보러가기: ' + sourceUrl;
+  }
 
-  return { fullMessage, sourceUrl };
+  return { caption, imageUrl };
 }
 
 const MIME = {
@@ -643,10 +652,14 @@ async function handleTgCommand(command, fullText) {
       // 전체 60초 타임아웃
       const newsPromise = handleNewsCommand(keyword);
       const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('60초 타임아웃')), 60000));
-      const { fullMessage, sourceUrl } = await Promise.race([newsPromise, timeoutPromise]);
+      const { caption, imageUrl } = await Promise.race([newsPromise, timeoutPromise]);
 
-      // 기사 이미지를 위에, 본문을 아래에 — 1개 메시지
-      await tgSendNews(fullMessage, sourceUrl, NEWS_TOPIC_ID);
+      // 이미지 + 캡션 1개 메시지로 전송
+      if (imageUrl) {
+        await tgSendPhoto(imageUrl, caption, NEWS_TOPIC_ID);
+      } else {
+        await tgSend(caption, NEWS_TOPIC_ID);
+      }
     } catch (err) {
       await tgSend(`❌ 뉴스 생성 실패: ${err.message}`);
     }
