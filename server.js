@@ -346,14 +346,16 @@ async function handleNewsCommand(keyword) {
 - 총 길이 최대 1500자
 - 한국어로 작성
 - 수치가 없으면 📊 섹션 생략
-- 오늘은 ${new Date().toISOString().slice(0, 10)}이다. 기사 날짜를 정확히 표기해.`,
+- 오늘은 ${new Date().toISOString().slice(0, 10)}이다. 기사 날짜를 정확히 표기해.
+- "기사 X는 무관하여 제외" 같은 메타 코멘트 절대 포함 금지. 오직 뉴스 분석 내용만 출력.
+- 가장 관련성 높은 기사 1~2개만 집중 분석. 무관한 기사는 무시.`,
     [{ role: 'user', content: `다음 기사들을 분석해서 뉴스 포스트를 만들어줘:\n\n${articleContext}` }]
   );
 
-  // 기사 링크를 맨 앞에 붙여서 텔레그램 링크 프리뷰 자동 생성
-  const fullMessage = sourceUrl + '\n\n' + newsText + '\n\n🔗 기사보러가기';
+  // 본문 + 하단에 기사 링크
+  const fullMessage = newsText + '\n\n🔗 <a href="' + sourceUrl + '">기사보러가기</a>';
 
-  return { fullMessage };
+  return { fullMessage, sourceUrl };
 }
 
 const MIME = {
@@ -546,6 +548,37 @@ const CMD_MAP = {
   '/help':     'help'
 };
 
+// 뉴스용 — 기사 이미지를 텍스트 위에 크게 표시
+function tgSendNews(text, articleUrl, threadId) {
+  if (!TG_BOT_TOKEN || !TG_CHAT_ID) return Promise.resolve();
+  const payload = JSON.stringify({
+    chat_id: TG_CHAT_ID,
+    message_thread_id: threadId || COMMAND_TOPIC_ID,
+    text,
+    parse_mode: 'HTML',
+    link_preview_options: {
+      url: articleUrl,
+      prefer_large_media: true,
+      show_above_text: true
+    }
+  });
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: 'api.telegram.org',
+      path: `/bot${TG_BOT_TOKEN}/sendMessage`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
+    }, (resp) => {
+      let d = '';
+      resp.on('data', c => d += c);
+      resp.on('end', () => resolve(d));
+    });
+    req.on('error', () => resolve(null));
+    req.write(payload);
+    req.end();
+  });
+}
+
 function tgSend(text, threadId) {
   if (!TG_BOT_TOKEN || !TG_CHAT_ID) return Promise.resolve();
   const payload = JSON.stringify({
@@ -610,10 +643,10 @@ async function handleTgCommand(command, fullText) {
       // 전체 60초 타임아웃
       const newsPromise = handleNewsCommand(keyword);
       const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('60초 타임아웃')), 60000));
-      const { fullMessage } = await Promise.race([newsPromise, timeoutPromise]);
+      const { fullMessage, sourceUrl } = await Promise.race([newsPromise, timeoutPromise]);
 
-      // 기사 URL + 본문을 1개 메시지로 전송 (텔레그램이 링크 프리뷰 자동 생성)
-      await tgSend(fullMessage, NEWS_TOPIC_ID);
+      // 기사 이미지를 위에, 본문을 아래에 — 1개 메시지
+      await tgSendNews(fullMessage, sourceUrl, NEWS_TOPIC_ID);
     } catch (err) {
       await tgSend(`❌ 뉴스 생성 실패: ${err.message}`);
     }
