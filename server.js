@@ -906,14 +906,85 @@ async function handleTgCommand(command, fullText) {
 async function handleChat(userText, userName) {
   if (!ANTHROPIC_KEY) return;
 
-  // 뉴스/시장 관련 질문 감지 → 실시간 검색 보강
+  // ── 긴 텍스트 = 기사 붙여넣기 → 뉴스 포맷으로 정리 ──
+  if (userText.length > 300) {
+    await tgSend(`📝 기사 분석 중...`);
+    try {
+      const articleText = userText.slice(0, 5000); // 최대 5000자
+      const newsText = await callClaude(
+        `너는 텔레그램 크립토/경제 뉴스 채널 에디터야.
+사용자가 붙여넣은 기사/텍스트를 분석해서 아래 형식으로 정리해. 반드시 900자 이내로.
+
+형식:
+
+📌 [핵심 헤드라인 한 줄 — "..."으로 강조]
+
+[기사 전체 내용을 1~2문장으로 압축 요약. 80자 이내.]
+
+📋 주요 내용 요약
+• 핵심 3~4개 (각 1줄)
+
+💬 Comment
+
+1~2문장. 투자자 관점. 확정 아닌 건 명시.
+
+#해시태그 #3개
+
+규칙:
+- HTML 태그 금지, 일반 텍스트만
+- 불릿은 • 사용
+- 반드시 900자 이내
+- 한국어
+- 오늘은 ${new Date().toISOString().slice(0, 10)}
+- 메타 코멘트 금지. 뉴스 내용만.
+- 광고, 댓글, 네비게이션 등 부수 텍스트는 무시하고 핵심 기사만 분석.`,
+        [{ role: 'user', content: `이 기사를 분석해줘:\n\n${articleText}` }]
+      );
+
+      // 기사 원문에서 URL 추출 시도
+      const urlMatch = userText.match(/https?:\/\/[^\s]+/);
+      const sourceUrl = urlMatch ? urlMatch[0] : '';
+
+      let caption = applyNewsEmojis(newsText, sourceUrl);
+      if (caption.length > 1024) {
+        caption = applyNewsEmojis(newsText.slice(0, 800), sourceUrl);
+      }
+
+      // 기사에서 og:image 역할을 할 이미지 검색
+      const titleMatch = newsText.match(/^📌\s*(.+)$/m);
+      const searchTitle = titleMatch ? titleMatch[1].slice(0, 40) : '';
+      let imageUrl = '';
+      if (searchTitle && BRAVE_KEY) {
+        try {
+          const imgResult = await braveSearch(searchTitle + ' 뉴스', 3);
+          const imgResults = imgResult?.web?.results || [];
+          for (const r of imgResults) {
+            if (r.thumbnail?.src && !r.thumbnail.src.match(/logo|icon|favicon/i)) {
+              imageUrl = r.thumbnail.src;
+              break;
+            }
+          }
+        } catch {}
+      }
+
+      if (imageUrl) {
+        await tgSendPhoto(imageUrl, caption, COMMAND_TOPIC_ID);
+      } else {
+        await tgSend(caption, COMMAND_TOPIC_ID);
+      }
+    } catch (err) {
+      await tgSend(`❌ 기사 분석 실패: ${err.message}`);
+    }
+    return;
+  }
+
+  // ── 짧은 텍스트 = 일반 대화/질문 ──
   const marketKeywords = ['비트코인', '이더리움', 'btc', 'eth', '코인', '주식', '환율', '금리', '유가', '나스닥', 'S&P', '떨어', '올라', '하락', '상승', '폭락', '급등', '왜 이렇', '무슨 일', '뉴스'];
   const needsSearch = marketKeywords.some(kw => userText.toLowerCase().includes(kw.toLowerCase()));
 
   let searchContext = '';
   if (needsSearch && BRAVE_KEY) {
     try {
-      // 핵심 키워드 추출하여 검색
       const searchQuery = userText.replace(/[?？！!~]/g, '').slice(0, 60);
       const newsResult = await braveNewsSearch(searchQuery, 3);
       const results = newsResult?.results || [];
@@ -921,7 +992,6 @@ async function handleChat(userText, userName) {
         searchContext = '\n\n[실시간 뉴스 검색 결과]\n' +
           results.slice(0, 3).map(r => `• ${r.title}: ${r.description || ''}`).join('\n');
       }
-      // 뉴스 없으면 웹 검색
       if (!searchContext) {
         const webResult = await braveSearch(searchQuery, 3);
         const webResults = webResult?.web?.results || [];
