@@ -193,10 +193,10 @@ const AGENTS = {
 - 확신도와 리스크 레벨 표시
 - 최대 300자.`
   },
-  writer: {
-    name: '✍️ 작가',
-    emoji: '✍️',
-    system: `너는 "작가"야. 블로그/SNS 콘텐츠를 전문적으로 제작해.
+  blogger: {
+    name: '📝 블로거',
+    emoji: '📝',
+    system: `너는 "블로거"야. 블로그/SNS 콘텐츠를 전문적으로 제작해.
 - SEO 최적화된 제목과 본문 작성
 - 초보자도 이해할 수 있는 쉬운 설명
 - 투자/경제/AI 분야 전문 블로그 톤
@@ -710,10 +710,10 @@ const WORKFLOWS = {
   macro:        { file: 'content_macro.yml',  name: '🌏 매크로 리포트', time: '22:00', agent: 'analyst' },
   summary:      { file: 'summary.yml',        name: '📊 일별 요약',     time: '22:10', agent: 'moderator' },
   failsafe:     { file: 'failsafe.yml',       name: '🛡️ 페일세이프',   time: '12:00', agent: 'moderator' },
-  blog_issue:   { file: 'blog_issue.yml',    name: '📝 블로그 핫이슈', time: '15:00', agent: 'writer' },
-  blog_ai:      { file: 'blog_ai.yml',       name: '🤖 블로그 AI',     time: '19:00', agent: 'writer' },
-  blog_market:  { file: 'blog_market.yml',   name: '📈 블로그 시장',   time: '23:30', agent: 'writer' },
-  blog_weekly:  { file: 'blog_weekly.yml',   name: '📊 블로그 주간',   time: '일 10:00', agent: 'writer' },
+  blog_issue:   { file: 'blog_issue.yml',    name: '📝 블로그 핫이슈', time: '15:00', agent: 'blogger' },
+  blog_ai:      { file: 'blog_ai.yml',       name: '🤖 블로그 AI',     time: '19:00', agent: 'blogger' },
+  blog_market:  { file: 'blog_market.yml',   name: '📈 블로그 시장',   time: '23:30', agent: 'blogger' },
+  blog_weekly:  { file: 'blog_weekly.yml',   name: '📊 블로그 주간',   time: '일 10:00', agent: 'blogger' },
 };
 
 // ── API Routes ──
