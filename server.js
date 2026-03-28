@@ -303,19 +303,51 @@ async function handleNewsCommand(keyword) {
     let articleText = page.text || '';
     let imageUrl = (page.ogImage && !page.ogImage.match(/logo|icon|favicon|brand/i)) ? page.ogImage : '';
 
-    // 크롤링 실패 시 Brave 검색으로 기사 내용 확보
+    // 크롤링 실패 시 다단계 fallback
     if (!articleText || articleText === '(타임아웃)' || articleText.length < 100) {
       try {
-        // URL에서 도메인+제목 추출하여 검색
-        const domain = new URL(keyword).hostname.replace('www.', '');
-        const searchResult = await braveSearch('site:' + domain + ' ' + keyword, 3);
-        const found = searchResult?.web?.results?.[0];
-        if (found) {
-          articleText = found.description || '';
-          // 해당 검색 결과 페이지도 크롤링 시도
-          const page2 = await fetchPage(found.url || keyword);
-          if (page2.text && page2.text.length > articleText.length) articleText = page2.text;
-          if (!imageUrl && page2.ogImage && !page2.ogImage.match(/logo|icon|favicon|brand/i)) imageUrl = page2.ogImage;
+        // 1단계: URL로 Brave 검색 (네이버 등 크롤링 차단 사이트 대응)
+        const searchResult = await braveSearch(keyword, 3);
+        const webResults = searchResult?.web?.results || [];
+        for (const found of webResults) {
+          if (found.description && found.description.length > 50) {
+            articleText = found.title + '\n' + found.description;
+            break;
+          }
+        }
+
+        // 2단계: 여전히 부족하면 제목 추출하여 뉴스 검색
+        if (!articleText || articleText.length < 80) {
+          const titleFromWeb = webResults[0]?.title || '';
+          if (titleFromWeb) {
+            const newsResult = await braveNewsSearch(titleFromWeb, 3);
+            const newsResults = newsResult?.results || [];
+            for (const nr of newsResults) {
+              if (nr.description && nr.description.length > 50) {
+                articleText = nr.title + '\n' + nr.description;
+                // 해당 뉴스 페이지 크롤링 시도 (네이버가 아닌 다른 소스)
+                if (nr.url && !nr.url.includes('naver.com')) {
+                  const page2 = await fetchPage(nr.url);
+                  if (page2.text && page2.text.length > articleText.length) articleText = page2.text;
+                  if (!imageUrl && page2.ogImage && !page2.ogImage.match(/logo|icon|favicon|brand/i)) imageUrl = page2.ogImage;
+                }
+                break;
+              }
+            }
+          }
+        }
+
+        // 3단계: 그래도 부족하면 도메인 기반 검색
+        if (!articleText || articleText.length < 80) {
+          const domain = new URL(keyword).hostname.replace('www.', '');
+          const siteResult = await braveSearch('site:' + domain + ' ' + keyword, 3);
+          const found = siteResult?.web?.results?.[0];
+          if (found) {
+            articleText = (found.title || '') + '\n' + (found.description || '');
+            const page3 = await fetchPage(found.url || keyword);
+            if (page3.text && page3.text.length > articleText.length) articleText = page3.text;
+            if (!imageUrl && page3.ogImage && !page3.ogImage.match(/logo|icon|favicon|brand/i)) imageUrl = page3.ogImage;
+          }
         }
       } catch {}
     }
