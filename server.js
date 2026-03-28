@@ -910,10 +910,34 @@ async function handleChat(userText, userName) {
   if (userText.length > 300) {
     await tgSend(`📝 기사 분석 중...`);
     try {
-      const articleText = userText.slice(0, 5000); // 최대 5000자
+      // 노이즈 제거 전처리 — 네이버/뉴스 포털 잡텍스트 제거
+      let articleText = userText
+        .replace(/본문 바로가기[\s\S]*?(?=\n[가-힣]{2,})/i, '')  // 네이버 상단 네비
+        .replace(/Copyright[\s\S]*$/i, '')                          // 저작권 이하 제거
+        .replace(/이 기사는 언론사에서[\s\S]*$/i, '')              // 네이버 하단 제거
+        .replace(/댓글\d*[\s\S]*$/i, '')                           // 댓글 섹션 제거
+        .replace(/함께 볼만한[\s\S]*$/i, '')                       // 추천 기사 제거
+        .replace(/랭킹 뉴스[\s\S]*$/i, '')                        // 랭킹 섹션 제거
+        .replace(/뉴시스 헤드라인[\s\S]*$/i, '')                   // 헤드라인 섹션
+        .replace(/구독이 늘어난[\s\S]*$/i, '')                     // 구독 섹션
+        .replace(/네이버 메인에서[\s\S]*$/i, '')                   // 네이버 메인 안내
+        .replace(/이 기사를 추천합니다[\s\S]*$/i, '')              // 추천 반응
+        .replace(/기자 프로필[\s\S]*?구독\n/gi, '')                // 기자 프로필
+        .replace(/PICK\n안내\n/g, '')
+        .replace(/이전\n#[\s\S]*?다음\n/g, '')                     // 이슈 NOW
+        .replace(/\[서울=뉴시스\][^=]*=[^.]*\.\s*\d{4}\.\d{2}\.\d{2}\.\s*\S+@\S+/g, '') // 사진 캡션
+        .replace(/\n{3,}/g, '\n\n')                                 // 과다 줄바꿈 정리
+        .trim()
+        .slice(0, 4000);
+
       const newsText = await callClaude(
         `너는 텔레그램 크립토/경제 뉴스 채널 에디터야.
-사용자가 붙여넣은 기사/텍스트를 분석해서 아래 형식으로 정리해. 반드시 900자 이내로.
+사용자가 뉴스 포털에서 복사해온 기사 텍스트를 분석해서 아래 형식으로 정리해.
+
+중요: 입력에 광고, 댓글, 네비게이션, 관련기사 목록 등 잡텍스트가 섞여 있을 수 있다.
+그런 것은 전부 무시하고, 핵심 기사 본문만 찾아서 분석해라.
+절대 "분석할 수 없다"거나 "기사가 아니다"라고 거부하지 마라.
+텍스트 속에서 가장 중요한 뉴스를 찾아 반드시 아래 형식으로 출력해라.
 
 형식:
 
@@ -936,8 +960,7 @@ async function handleChat(userText, userName) {
 - 반드시 900자 이내
 - 한국어
 - 오늘은 ${new Date().toISOString().slice(0, 10)}
-- 메타 코멘트 금지. 뉴스 내용만.
-- 광고, 댓글, 네비게이션 등 부수 텍스트는 무시하고 핵심 기사만 분석.`,
+- 메타 코멘트/설명 금지. 뉴스 내용만 출력.`,
         [{ role: 'user', content: `이 기사를 분석해줘:\n\n${articleText}` }]
       );
 
