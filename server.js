@@ -30,6 +30,98 @@ function isProcessed(msgId) {
   return false;
 }
 
+// ── RSS 피드 소스 ──
+const RSS_FEEDS = {
+  crypto: [
+    'https://ko.cointelegraph.com/rss',           // 코인텔레그래프 KR
+    'https://www.coindeskkorea.com/feed/',         // 코인데스크 KR
+    'https://decrypt.co/feed',                     // Decrypt
+    'https://www.theblock.co/rss.xml',            // The Block
+    'https://blockworks.co/feed',                  // Blockworks
+    'https://www.blockmedia.co.kr/feed/',          // 블록미디어
+    'https://www.tokenpost.kr/rss',                // 토큰포스트
+  ],
+  macro: [
+    'https://feeds.bbci.co.uk/news/business/rss.xml',  // BBC Business
+    'https://www.cnbc.com/id/100003114/device/rss/rss.html', // CNBC
+    'https://www.yna.co.kr/rss/economy.xml',       // 연합뉴스 경제
+    'https://www.mk.co.kr/rss/30100041/',           // 매일경제
+    'https://www.sedaily.com/RSS/Economy',          // 서울경제
+  ],
+  ai: [
+    'https://www.aitimes.com/rss/allArticle.xml',  // AI타임스
+    'https://techcrunch.com/category/artificial-intelligence/feed/', // TechCrunch AI
+  ],
+};
+
+// RSS XML 간단 파서 (외부 의존성 없이)
+function fetchRSS(feedUrl) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve([]), 8000);
+    try {
+      const parsed = new URL(feedUrl);
+      const getter = parsed.protocol === 'https:' ? https : http;
+      getter.get(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 7000 }, (resp) => {
+        let data = '';
+        resp.on('data', c => { data += c; if (data.length > 100000) resp.destroy(); });
+        resp.on('end', () => {
+          clearTimeout(timer);
+          const items = [];
+          // <item> 또는 <entry> 태그에서 제목/링크 추출
+          const itemRegex = /<item[\s>][\s\S]*?<\/item>|<entry[\s>][\s\S]*?<\/entry>/gi;
+          const matches = data.match(itemRegex) || [];
+          for (const block of matches.slice(0, 8)) {
+            const titleMatch = block.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+            const linkMatch = block.match(/<link[^>]*href=["']([^"']+)["']/i)
+              || block.match(/<link[^>]*>([^<]+)<\/link>/i);
+            const descMatch = block.match(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i)
+              || block.match(/<summary[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/summary>/i);
+            const pubDateMatch = block.match(/<pubDate[^>]*>([^<]+)<\/pubDate>/i)
+              || block.match(/<published[^>]*>([^<]+)<\/published>/i)
+              || block.match(/<updated[^>]*>([^<]+)<\/updated>/i);
+
+            if (titleMatch) {
+              const title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
+              const link = linkMatch ? linkMatch[1].trim() : '';
+              const desc = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 150) : '';
+              const pubDate = pubDateMatch ? new Date(pubDateMatch[1].trim()) : null;
+
+              // 12시간 이내 기사만 (pubDate가 파싱 가능한 경우)
+              if (pubDate && !isNaN(pubDate.getTime())) {
+                const hoursAgo = (Date.now() - pubDate.getTime()) / (1000 * 60 * 60);
+                if (hoursAgo > 24) continue; // 24시간 넘은 건 스킵
+              }
+
+              if (title && link) {
+                items.push({ title, url: link, desc });
+              }
+            }
+          }
+          resolve(items);
+        });
+        resp.on('error', () => { clearTimeout(timer); resolve([]); });
+      }).on('error', () => { clearTimeout(timer); resolve([]); });
+    } catch { clearTimeout(timer); resolve([]); }
+  });
+}
+
+// 여러 RSS 피드에서 병렬 수집
+async function fetchMultiRSS(categories) {
+  const feeds = [];
+  for (const cat of categories) {
+    if (RSS_FEEDS[cat]) feeds.push(...RSS_FEEDS[cat]);
+  }
+  const results = await Promise.all(feeds.map(url => fetchRSS(url)));
+  const all = results.flat();
+  // URL 기반 중복 제거
+  const seen = new Set();
+  return all.filter(a => {
+    if (seen.has(a.url)) return false;
+    seen.add(a.url);
+    return true;
+  });
+}
+
 // ── /news 커스텀 이모지 ──
 const NEWS_CE = {
   headline: '<tg-emoji emoji-id="5787657036258872916">📢</tg-emoji>',
@@ -822,13 +914,15 @@ async function handleTgCommand(command, fullText) {
 
   // /pick 처리 — 최근 12시간 기사 중 텔레그램에 올리기 좋은 기사 추천
   if (command === '/pick') {
-    if (!BRAVE_KEY) { await tgSend('❌ BRAVE_SEARCH_API_KEY 미설정'); return; }
     if (!ANTHROPIC_KEY) { await tgSend('❌ ANTHROPIC_API_KEY 미설정'); return; }
 
-    await tgSend('🔍 최근 12시간 뉴스 중 텔레그램에 올리기 좋은 기사를 찾고 있습니다...');
+    await tgSend('🔍 RSS + Brave Search에서 최신 기사를 수집하고 있습니다...');
 
     try {
-      // 5개 카테고리 병렬 검색 (12시간 = freshness 없이 pd 사용)
+      // 1단계: RSS 피드에서 최신 기사 수집 (Brave와 병렬)
+      const rssPromise = fetchMultiRSS(['crypto', 'macro', 'ai']);
+
+      // 2단계: Brave 검색 5개 카테고리 병렬
       const queries = [
         '비트코인 암호화폐 시장',
         '글로벌 경제 금리 증시',
@@ -836,37 +930,53 @@ async function handleTgCommand(command, fullText) {
         '한국 경제 정책',
         '투자 주식 부동산',
       ];
-      const allArticles = [];
+      const braveArticles = [];
       const EXCLUDE = ['dcinside', 'fmkorea', 'ppomppu', 'clien', 'ruliweb', 'reddit',
         'namu.wiki', 'tistory', 'blog.naver', 'youtube.com', 'twitter.com', 'x.com'];
 
-      for (const q of queries) {
+      const bravePromises = queries.map(async (q) => {
         try {
+          if (!BRAVE_KEY) return;
           const result = await braveNewsSearch(q, 6);
           const results = result?.results || [];
           for (const r of results) {
             if (!r.title || !r.url) continue;
             if (EXCLUDE.some(ex => r.url.toLowerCase().includes(ex))) continue;
-            allArticles.push({ title: r.title, url: r.url, desc: (r.description || '').slice(0, 100) });
+            braveArticles.push({ title: r.title, url: r.url, desc: (r.description || '').slice(0, 100), source: 'brave' });
           }
         } catch {}
-      }
+      });
+
+      // RSS와 Brave 동시 수집
+      const [rssArticles] = await Promise.all([rssPromise, ...bravePromises]);
+
+      // RSS 결과에 source 태그 추가
+      const taggedRss = (rssArticles || []).map(a => ({ ...a, source: 'rss' }));
+
+      // 합치기
+      const allArticles = [...taggedRss, ...braveArticles];
 
       if (allArticles.length === 0) {
         await tgSend('❌ 검색 결과가 없습니다.');
         return;
       }
 
-      // 중복 URL 제거
-      const seen = new Set();
+      // 중복 URL 제거 + 제목 유사 중복 제거
+      const seenUrl = new Set();
+      const seenTitle = new Set();
       const unique = allArticles.filter(a => {
-        if (seen.has(a.url)) return false;
-        seen.add(a.url);
+        if (seenUrl.has(a.url)) return false;
+        seenUrl.add(a.url);
+        const titleKey = a.title.slice(0, 20);
+        if (seenTitle.has(titleKey)) return false;
+        seenTitle.add(titleKey);
         return true;
       });
 
       // Claude에게 선별 요청
-      const listText = unique.map((a, i) => `${i+1}. ${a.title}\n   ${a.desc}\n   ${a.url}`).join('\n\n');
+      const rssCount = unique.filter(a => a.source === 'rss').length;
+      const braveCount = unique.filter(a => a.source === 'brave').length;
+      const listText = unique.map((a, i) => `${i+1}. [${a.source}] ${a.title}\n   ${a.desc}\n   ${a.url}`).join('\n\n');
 
       const picked = await callClaude(
         `너는 텔레그램 투자/경제 채널 "막돈방"의 편집장이야.
@@ -899,10 +1009,10 @@ async function handleTgCommand(command, fullText) {
 - URL은 원문 그대로
 - HTML 태그 금지
 - 추가 설명이나 코멘트 금지, 제목+링크만`,
-        [{ role: 'user', content: `최근 뉴스 목록:\n\n${listText}` }]
+        [{ role: 'user', content: `최근 뉴스 목록 (RSS ${rssCount}건, Brave ${braveCount}건, 총 ${unique.length}건):\n\n${listText}` }]
       );
 
-      await tgSend(picked);
+      await tgSend(`📊 수집: RSS ${rssCount}건 + Brave ${braveCount}건 = ${unique.length}건\n\n${picked}`);
     } catch (err) {
       await tgSend(`❌ 기사 추천 실패: ${err.message}`);
     }
