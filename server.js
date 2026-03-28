@@ -17,6 +17,19 @@ const CHAT_OWNER_IDS = ['1668479932']; // 대화형 챗 허용 유저 (LastMoney
 const REPO_OWNER = 'LastMoney64';
 const REPO_NAME = 'makdon-briefing';
 
+// ── 메시지 중복 처리 방지 ──
+const processedMsgs = new Set();
+function isProcessed(msgId) {
+  if (processedMsgs.has(msgId)) return true;
+  processedMsgs.add(msgId);
+  // 메모리 관리: 1000개 넘으면 오래된 것 제거
+  if (processedMsgs.size > 1000) {
+    const arr = [...processedMsgs];
+    arr.slice(0, 500).forEach(id => processedMsgs.delete(id));
+  }
+  return false;
+}
+
 // ── /news 커스텀 이모지 ──
 const NEWS_CE = {
   headline: '<tg-emoji emoji-id="5787657036258872916">📢</tg-emoji>',
@@ -1086,14 +1099,12 @@ const server = http.createServer((req, res) => {
       try {
         const update = JSON.parse(body);
         const msg = update.message;
-        if (msg && msg.text) {
+        if (msg && msg.text && msg.message_id && !isProcessed(msg.message_id)) {
           const isCommandRoom = msg.message_thread_id === COMMAND_TOPIC_ID || !msg.message_thread_id;
           if (msg.text.startsWith('/')) {
-            // 슬래시 명령어 처리
             const cmd = msg.text.split('@')[0].split(' ')[0].toLowerCase();
             handleTgCommand(cmd, msg.text).catch(() => {});
           } else if (isCommandRoom && msg.from && CHAT_OWNER_IDS.includes(String(msg.from.id))) {
-            // 명령실에서 오너의 일반 텍스트 → 대화형 챗
             handleChat(msg.text, msg.from.first_name || '').catch(e => {
               console.error('[Chat Error]', e.message);
             });
