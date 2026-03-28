@@ -730,6 +730,7 @@ const CMD_MAP = {
   '/ask':      'ask',
   '/debate':   'ask',
   '/news':     'news',
+  '/pick':     'pick',
   '/help':     'help'
 };
 
@@ -805,16 +806,106 @@ async function handleTgCommand(command, fullText) {
       `/status - 오늘 발행 현황\n\n` +
       `<b>🏛️ Think Tank</b>\n` +
       `/ask [질문] - 5명 에이전트 토론\n` +
-      `/news [키워드] - 뉴스 검색 + 정리 발행\n\n` +
+      `/news [키워드] - 뉴스 검색 + 정리 발행\n` +
+      `/pick - 지금 올리기 좋은 기사 추천\n\n` +
       `<b>💬 대화형 챗</b>\n` +
       `슬래시 명령 없이 자유롭게 질문하세요!\n` +
-      `시장 질문은 실시간 뉴스 검색 후 답변합니다.\n\n` +
+      `기사 본문 붙여넣기도 자동 분석됩니다.\n\n` +
       `예시:\n` +
       `<code>/ask 비트코인 지금 사야 할까?</code>\n` +
       `<code>/news 가상자산 과세</code>\n` +
       `<code>지금 비트코인 왜 떨어져?</code>\n\n` +
       `/help - 이 도움말`
     );
+    return;
+  }
+
+  // /pick 처리 — 최근 12시간 기사 중 텔레그램에 올리기 좋은 기사 추천
+  if (command === '/pick') {
+    if (!BRAVE_KEY) { await tgSend('❌ BRAVE_SEARCH_API_KEY 미설정'); return; }
+    if (!ANTHROPIC_KEY) { await tgSend('❌ ANTHROPIC_API_KEY 미설정'); return; }
+
+    await tgSend('🔍 최근 12시간 뉴스 중 텔레그램에 올리기 좋은 기사를 찾고 있습니다...');
+
+    try {
+      // 5개 카테고리 병렬 검색 (12시간 = freshness 없이 pd 사용)
+      const queries = [
+        '비트코인 암호화폐 시장',
+        '글로벌 경제 금리 증시',
+        '인공지능 AI 빅테크',
+        '한국 경제 정책',
+        '투자 주식 부동산',
+      ];
+      const allArticles = [];
+      const EXCLUDE = ['dcinside', 'fmkorea', 'ppomppu', 'clien', 'ruliweb', 'reddit',
+        'namu.wiki', 'tistory', 'blog.naver', 'youtube.com', 'twitter.com', 'x.com'];
+
+      for (const q of queries) {
+        try {
+          const result = await braveNewsSearch(q, 6);
+          const results = result?.results || [];
+          for (const r of results) {
+            if (!r.title || !r.url) continue;
+            if (EXCLUDE.some(ex => r.url.toLowerCase().includes(ex))) continue;
+            allArticles.push({ title: r.title, url: r.url, desc: (r.description || '').slice(0, 100) });
+          }
+        } catch {}
+      }
+
+      if (allArticles.length === 0) {
+        await tgSend('❌ 검색 결과가 없습니다.');
+        return;
+      }
+
+      // 중복 URL 제거
+      const seen = new Set();
+      const unique = allArticles.filter(a => {
+        if (seen.has(a.url)) return false;
+        seen.add(a.url);
+        return true;
+      });
+
+      // Claude에게 선별 요청
+      const listText = unique.map((a, i) => `${i+1}. ${a.title}\n   ${a.desc}\n   ${a.url}`).join('\n\n');
+
+      const picked = await callClaude(
+        `너는 텔레그램 투자/경제 채널 "막돈방"의 편집장이야.
+아래 뉴스 목록에서 텔레그램 채널에 올리기 좋은 기사 5~7개를 선별해줘.
+
+선별 기준:
+1. 투자자(크립토/주식)에게 실질적으로 중요한 뉴스
+2. 시장에 영향을 줄 수 있는 이슈
+3. 독자의 관심을 끌 수 있는 주제
+4. 단순 홍보/광고성 기사 제외
+5. 중복 주제가 있으면 가장 좋은 기사 1개만
+
+반드시 아래 형식으로 출력:
+
+📰 텔레그램 추천 기사
+
+① [기사 제목]
+🔗 [URL]
+
+② [기사 제목]
+🔗 [URL]
+
+(5~7개)
+
+마지막에 한 줄로: 💡 오늘 주목: [가장 핫한 키워드 2~3개]
+
+규칙:
+- 번호 매기기
+- 기사 제목은 원문 그대로
+- URL은 원문 그대로
+- HTML 태그 금지
+- 추가 설명이나 코멘트 금지, 제목+링크만`,
+        [{ role: 'user', content: `최근 뉴스 목록:\n\n${listText}` }]
+      );
+
+      await tgSend(picked);
+    } catch (err) {
+      await tgSend(`❌ 기사 추천 실패: ${err.message}`);
+    }
     return;
   }
 
