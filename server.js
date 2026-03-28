@@ -228,7 +228,7 @@ function braveNewsSearch(query, count = 5, freshness = 'pd') {
 // ── 웹 페이지 텍스트 + og:image 추출 (타임아웃 보장) ──
 function fetchPage(pageUrl) {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve({ text: '(타임아웃)', ogImage: '' }), 10000);
+    const timer = setTimeout(() => resolve({ text: '(타임아웃)', ogImage: '', ogTitle: '', ogDesc: '' }), 10000);
     try {
       const parsed = new URL(pageUrl);
       const getter = parsed.protocol === 'https:' ? https : http;
@@ -243,11 +243,21 @@ function fetchPage(pageUrl) {
         resp.on('data', c => { data += c; if (data.length > 50000) { resp.destroy(); } });
         resp.on('end', () => {
           clearTimeout(timer);
-          // og:image 추출
+          // og 메타 태그 추출
           let ogImage = '';
-          const ogMatch = data.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)
+          const ogImgMatch = data.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)
             || data.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
-          if (ogMatch) ogImage = ogMatch[1];
+          if (ogImgMatch) ogImage = ogImgMatch[1];
+
+          let ogTitle = '';
+          const ogTitleMatch = data.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)
+            || data.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+          if (ogTitleMatch) ogTitle = ogTitleMatch[1];
+
+          let ogDesc = '';
+          const ogDescMatch = data.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i)
+            || data.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
+          if (ogDescMatch) ogDesc = ogDescMatch[1];
 
           const text = data
             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -255,13 +265,13 @@ function fetchPage(pageUrl) {
             .replace(/<[^>]+>/g, ' ')
             .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
             .replace(/\s+/g, ' ').trim().slice(0, 3000);
-          resolve({ text, ogImage });
+          resolve({ text, ogImage, ogTitle, ogDesc });
         });
-        resp.on('error', () => { clearTimeout(timer); resolve({ text: '', ogImage: '' }); });
+        resp.on('error', () => { clearTimeout(timer); resolve({ text: '', ogImage: '', ogTitle: '', ogDesc: '' }); });
       });
-      req.on('error', () => { clearTimeout(timer); resolve({ text: '', ogImage: '' }); });
-      req.on('timeout', () => { req.destroy(); clearTimeout(timer); resolve({ text: '', ogImage: '' }); });
-    } catch { clearTimeout(timer); resolve({ text: '', ogImage: '' }); }
+      req.on('error', () => { clearTimeout(timer); resolve({ text: '', ogImage: '', ogTitle: '', ogDesc: '' }); });
+      req.on('timeout', () => { req.destroy(); clearTimeout(timer); resolve({ text: '', ogImage: '', ogTitle: '', ogDesc: '' }); });
+    } catch { clearTimeout(timer); resolve({ text: '', ogImage: '', ogTitle: '', ogDesc: '' }); }
   });
 }
 
@@ -303,50 +313,59 @@ async function handleNewsCommand(keyword) {
     let articleText = page.text || '';
     let imageUrl = (page.ogImage && !page.ogImage.match(/logo|icon|favicon|brand/i)) ? page.ogImage : '';
 
-    // 크롤링 실패 시 다단계 fallback
+    // og:title이 있으면 제목 확보 (네이버 등도 og 메타는 제공)
+    const ogTitle = page.ogTitle || '';
+    const ogDesc = page.ogDesc || '';
+
+    // og 메타로 최소 내용 확보 가능한 경우
+    if ((!articleText || articleText === '(타임아웃)' || articleText.length < 100) && (ogTitle || ogDesc)) {
+      console.log(`[/news] 본문 부족 → og 메타 활용: "${ogTitle}"`);
+      // og:title로 Brave 뉴스 검색 → 같은 주제 기사 내용 확보
+      try {
+        const searchQuery = ogTitle || ogDesc.slice(0, 60);
+        const newsResult = await braveNewsSearch(searchQuery, 5);
+        const newsResults = newsResult?.results || [];
+        for (const nr of newsResults) {
+          if (nr.description && nr.description.length > 50) {
+            // 같은 주제 기사 크롤링 시도 (원본이 아닌 소스)
+            const page2 = await fetchPage(nr.url);
+            if (page2.text && page2.text.length > 200) {
+              articleText = page2.text;
+              if (!imageUrl && page2.ogImage && !page2.ogImage.match(/logo|icon|favicon|brand/i)) imageUrl = page2.ogImage;
+              break;
+            }
+            // 크롤링 실패해도 검색 결과의 description 활용
+            if (!articleText || articleText.length < 100) {
+              articleText = nr.title + '\n' + nr.description;
+            }
+          }
+        }
+        // 뉴스 검색 결과 없으면 웹 검색
+        if (!articleText || articleText.length < 100) {
+          const webResult = await braveSearch(searchQuery, 3);
+          for (const wr of (webResult?.web?.results || [])) {
+            if (wr.description && wr.description.length > 50) {
+              articleText = wr.title + '\n' + wr.description;
+              break;
+            }
+          }
+        }
+      } catch {}
+      // 최소한 og 메타 자체라도 사용
+      if (!articleText || articleText.length < 50) {
+        articleText = ogTitle + '\n' + ogDesc;
+      }
+    }
+
+    // og 메타도 없는 경우 — URL 기반 검색
     if (!articleText || articleText === '(타임아웃)' || articleText.length < 100) {
       try {
-        // 1단계: URL로 Brave 검색 (네이버 등 크롤링 차단 사이트 대응)
         const searchResult = await braveSearch(keyword, 3);
         const webResults = searchResult?.web?.results || [];
         for (const found of webResults) {
           if (found.description && found.description.length > 50) {
             articleText = found.title + '\n' + found.description;
             break;
-          }
-        }
-
-        // 2단계: 여전히 부족하면 제목 추출하여 뉴스 검색
-        if (!articleText || articleText.length < 80) {
-          const titleFromWeb = webResults[0]?.title || '';
-          if (titleFromWeb) {
-            const newsResult = await braveNewsSearch(titleFromWeb, 3);
-            const newsResults = newsResult?.results || [];
-            for (const nr of newsResults) {
-              if (nr.description && nr.description.length > 50) {
-                articleText = nr.title + '\n' + nr.description;
-                // 해당 뉴스 페이지 크롤링 시도 (네이버가 아닌 다른 소스)
-                if (nr.url && !nr.url.includes('naver.com')) {
-                  const page2 = await fetchPage(nr.url);
-                  if (page2.text && page2.text.length > articleText.length) articleText = page2.text;
-                  if (!imageUrl && page2.ogImage && !page2.ogImage.match(/logo|icon|favicon|brand/i)) imageUrl = page2.ogImage;
-                }
-                break;
-              }
-            }
-          }
-        }
-
-        // 3단계: 그래도 부족하면 도메인 기반 검색
-        if (!articleText || articleText.length < 80) {
-          const domain = new URL(keyword).hostname.replace('www.', '');
-          const siteResult = await braveSearch('site:' + domain + ' ' + keyword, 3);
-          const found = siteResult?.web?.results?.[0];
-          if (found) {
-            articleText = (found.title || '') + '\n' + (found.description || '');
-            const page3 = await fetchPage(found.url || keyword);
-            if (page3.text && page3.text.length > articleText.length) articleText = page3.text;
-            if (!imageUrl && page3.ogImage && !page3.ogImage.match(/logo|icon|favicon|brand/i)) imageUrl = page3.ogImage;
           }
         }
       } catch {}
