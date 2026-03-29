@@ -13,6 +13,7 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const BRAVE_KEY = process.env.BRAVE_SEARCH_API_KEY || '';
 const COMMAND_TOPIC_ID = 104; // 🎮 명령실 thread_id
 const NEWS_TOPIC_ID = 104; // 뉴스도 명령실에 발송 (나중에 별도 토픽 가능)
+const TRANSLATE_TOPIC_ID = 308; // 🌐 번역방 thread_id
 const CHAT_OWNER_IDS = ['1668479932']; // 대화형 챗 허용 유저 (LastMoney)
 const REPO_OWNER = 'LastMoney64';
 const REPO_NAME = 'makdon-briefing';
@@ -202,6 +203,17 @@ const AGENTS = {
 - 투자/경제/AI 분야 전문 블로그 톤
 - Blogger, WordPress 멀티플랫폼 발행 담당
 - 3000~7000자 심층 분석 콘텐츠 제작`
+  },
+  translator: {
+    name: '🌐 번역가',
+    emoji: '🌐',
+    system: `너는 전문 번역가야. 다음 규칙을 따라:
+- 외국어(영어, 일본어, 중국어, 스페인어 등)가 입력되면 → 한국어로 번역
+- 한국어가 입력되면 → 영어로 번역
+- 번역만 출력. 설명이나 부가 텍스트 없이 번역 결과만.
+- 원문의 톤과 뉘앙스를 최대한 살려서 자연스럽게 번역
+- 전문 용어는 원어를 괄호로 병기 (예: 양적완화(QE))
+- 긴 글도 빠짐없이 전부 번역`
   }
 };
 
@@ -1131,6 +1143,20 @@ async function handleTgCommand(command, fullText) {
   await tgSend(`${ok ? '✅' : '❌'} <b>${wf.name}</b> — ${ok ? '트리거 완료! 약 1-2분 후 발행됩니다.' : '트리거 실패. GITHUB_TOKEN을 확인하세요.'}`);
 }
 
+// ── 번역 핸들러 ──
+async function handleTranslate(text) {
+  if (!ANTHROPIC_KEY) return;
+  const topicId = TRANSLATE_TOPIC_ID;
+  const agent = AGENTS.translator;
+  try {
+    const result = await callClaude(agent.system, text);
+    const reply = `🌐 <b>번역 결과</b>\n\n${result}`;
+    await tgSend(reply, topicId);
+  } catch (e) {
+    await tgSend(`❌ 번역 실패: ${e.message}`, topicId);
+  }
+}
+
 // ── 대화형 챗 핸들러 ──
 async function handleChat(userText, userName) {
   if (!ANTHROPIC_KEY) return;
@@ -1317,9 +1343,14 @@ const server = http.createServer((req, res) => {
         const msg = update.message;
         if (msg && msg.text && msg.message_id && !isProcessed(msg.message_id)) {
           const isCommandRoom = msg.message_thread_id === COMMAND_TOPIC_ID || !msg.message_thread_id;
+          const isTranslateRoom = msg.message_thread_id === TRANSLATE_TOPIC_ID;
           if (msg.text.startsWith('/')) {
             const cmd = msg.text.split('@')[0].split(' ')[0].toLowerCase();
             handleTgCommand(cmd, msg.text).catch(() => {});
+          } else if (isTranslateRoom && msg.from && CHAT_OWNER_IDS.includes(String(msg.from.id))) {
+            handleTranslate(msg.text).catch(e => {
+              console.error('[Translate Error]', e.message);
+            });
           } else if (isCommandRoom && msg.from && CHAT_OWNER_IDS.includes(String(msg.from.id))) {
             handleChat(msg.text, msg.from.first_name || '').catch(e => {
               console.error('[Chat Error]', e.message);
