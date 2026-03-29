@@ -1149,7 +1149,7 @@ async function handleTranslate(text) {
   const topicId = TRANSLATE_TOPIC_ID;
   const agent = AGENTS.translator;
   try {
-    const result = await callClaude(agent.system, text);
+    const result = await callClaude(agent.system, [{ role: 'user', content: text }]);
     const reply = `🌐 <b>번역 결과</b>\n\n${result}`;
     await tgSend(reply, topicId);
   } catch (e) {
