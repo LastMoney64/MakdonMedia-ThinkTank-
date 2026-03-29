@@ -714,6 +714,7 @@ const WORKFLOWS = {
   blog_ai:      { file: 'blog_ai.yml',       name: '🤖 블로그 AI',     time: '19:00', agent: 'blogger' },
   blog_market:  { file: 'blog_market.yml',   name: '📈 블로그 시장',   time: '23:30', agent: 'blogger' },
   blog_weekly:  { file: 'blog_weekly.yml',   name: '📊 블로그 주간',   time: '일 10:00', agent: 'blogger' },
+  shorts:       { file: 'shorts.yml',        name: '🎬 숏폼 영상',     time: '16:00', agent: 'media' },
 };
 
 // ── API Routes ──
