@@ -1407,6 +1407,8 @@ server.listen(PORT, () => {
       { cron: '0 10 * * 1-5',  key: 'blog_ai',     label: '블로그 AI트렌드' },   // 19:00 KST
       { cron: '30 14 * * 1-5', key: 'blog_market', label: '블로그 시장리포트' }, // 23:30 KST
       { cron: '0 1 * * 0',     key: 'blog_weekly', label: '블로그 주간리포트' }, // 일요일 10:00 KST
+      { cron: '0 1 * * *',     key: 'shorts',      label: '숏폼 모닝브리핑' },    // 10:00 KST
+      { cron: '0 13 * * *',    key: 'shorts',      label: '숏폼 저녁트렌드' },    // 22:00 KST
     ];
 
     for (const s of SCHEDULE) {
