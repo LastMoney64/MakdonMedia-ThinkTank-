@@ -722,9 +722,9 @@ const WORKFLOWS = {
   macro:        { file: 'content_macro.yml',  name: '🌏 매크로 리포트', time: '22:00', agent: 'analyst' },
   summary:      { file: 'summary.yml',        name: '📊 일별 요약',     time: '22:10', agent: 'moderator' },
   failsafe:     { file: 'failsafe.yml',       name: '🛡️ 페일세이프',   time: '12:00', agent: 'moderator' },
-  blog_issue:   { file: 'blog_issue.yml',    name: '📝 블로그 핫이슈', time: '15:00', agent: 'blogger' },
-  blog_ai:      { file: 'blog_ai.yml',       name: '🤖 블로그 AI',     time: '19:00', agent: 'blogger' },
-  blog_market:  { file: 'blog_market.yml',   name: '📈 블로그 시장',   time: '23:30', agent: 'blogger' },
+  blog_market:  { file: 'blog_market.yml',   name: '📈 블로그 시장',   time: '08:00', agent: 'blogger' },
+  blog_issue:   { file: 'blog_issue.yml',    name: '📝 블로그 핫이슈', time: '16:00', agent: 'blogger' },
+  blog_ai:      { file: 'blog_ai.yml',       name: '🤖 블로그 AI',     time: '22:00', agent: 'blogger' },
   blog_weekly:  { file: 'blog_weekly.yml',   name: '📊 블로그 주간',   time: '일 10:00', agent: 'blogger' },
   shorts:       { file: 'shorts.yml',        name: '🎬 숏폼 영상',     time: '16:00', agent: 'media' },
 };
@@ -1403,9 +1403,9 @@ server.listen(PORT, () => {
       { cron: '40 14 * * *',   key: 'evening',  label: '저녁 브리핑' },     // 23:40 KST
       { cron: '55 14 * * *',   key: 'summary',  label: '일별 요약' },       // 23:55 KST
       { cron: '0 3 * * *',     key: 'failsafe',    label: '페일세이프' },        // 12:00 KST
-      { cron: '0 6 * * 1-5',   key: 'blog_issue',  label: '블로그 핫이슈' },     // 15:00 KST
-      { cron: '0 10 * * 1-5',  key: 'blog_ai',     label: '블로그 AI트렌드' },   // 19:00 KST
-      { cron: '30 14 * * 1-5', key: 'blog_market', label: '블로그 시장리포트' }, // 23:30 KST
+      { cron: '0 23 * * 0-4',  key: 'blog_market', label: '블로그 시장리포트' }, // 08:00 KST (전날 UTC 23시 = 다음날 KST 8시)
+      { cron: '0 7 * * 1-5',   key: 'blog_issue',  label: '블로그 핫이슈' },     // 16:00 KST
+      { cron: '0 13 * * 1-5',  key: 'blog_ai',     label: '블로그 AI트렌드' },   // 22:00 KST
       { cron: '0 1 * * 0',     key: 'blog_weekly', label: '블로그 주간리포트' }, // 일요일 10:00 KST
       { cron: '0 1 * * *',     key: 'shorts',      label: '숏폼 모닝브리핑' },    // 10:00 KST
       { cron: '0 13 * * *',    key: 'shorts',      label: '숏폼 저녁트렌드' },    // 22:00 KST
