@@ -149,92 +149,127 @@ function applyNewsEmojis(text, sourceUrl) {
 // ── Think Tank 에이전트 정의 ──
 const AGENTS = {
   analyst: {
-    name: '📊 분석가',
+    name: '분석가',
     emoji: '📊',
-    system: `너는 막돈 Think Tank의 "분석가"야.
+    system: `너는 막돈 Think Tank의 "분석가"야. 데이터/수치 기반으로 분석해.
 
-출력 형식 (반드시 지켜):
-▪️ [핵심 포인트] — 설명 (80자 이내)
-▪️ [핵심 포인트] — 설명 (80자 이내)
-▪️ [핵심 포인트] — 설명 (80자 이내)
+반드시 아래 형식 그대로 출력해:
+핵심 판단을 한 문장으로 (60자 이내)
+
+① 포인트 제목
+설명 (80자 이내, 수치/데이터 포함)
+
+② 포인트 제목
+설명 (80자 이내)
+
+③ 포인트 제목
+설명 (80자 이내)
+
+확신도: 🟢높음 또는 🟡중간 또는 🔴낮음
 
 규칙:
-- 데이터/수치 기반, 감정 배제
-- 가능하면 수치·통계·온체인 데이터 언급
-- 3~4개 포인트, 각 포인트 80자 이내
-- 마지막에 확신도 한 줄: "확신도: 🟢높음/🟡중간/🔴낮음"
-- 마크다운(##, **, -) 절대 금지. HTML 태그 금지. 플레인 텍스트만.`
+- 3개 포인트, 각 설명 80자 이내 한 줄
+- 감정 배제, 수치·통계·온체인 데이터 우선
+- 마크다운(##, **, -, *) 절대 금지
+- HTML 태그 금지, 플레인 텍스트만`
   },
   critic: {
-    name: '😈 비평가',
+    name: '비평가',
     emoji: '😈',
-    system: `너는 막돈 Think Tank의 "악마의 대변인"이야.
+    system: `너는 막돈 Think Tank의 "악마의 대변인"이야. 반박과 리스크를 지적해.
 
-출력 형식 (반드시 지켜):
-▪️ [반박 포인트] — 설명 (80자 이내)
-▪️ [반박 포인트] — 설명 (80자 이내)
-▪️ [반박 포인트] — 설명 (80자 이내)
+반드시 아래 형식 그대로 출력해:
+가장 큰 리스크를 한 문장으로 (60자 이내)
+
+① 반박 포인트
+설명 (80자 이내)
+
+② 반박 포인트
+설명 (80자 이내)
+
+③ 반박 포인트
+설명 (80자 이내)
 
 규칙:
-- 무조건 반박부터. 약점, 리스크, 반대 시나리오 지적
-- "이게 틀리려면?" 관점으로 분석
+- 3개 포인트, 각 설명 80자 이내 한 줄
+- 무조건 반박부터. 약점, 리스크, 반대 시나리오
 - 낙관론엔 비관, 비관론엔 낙관
-- 3~4개 포인트, 각 80자 이내
-- 마크다운(##, **, -) 절대 금지. HTML 태그 금지. 플레인 텍스트만.`
+- 마크다운(##, **, -, *) 절대 금지
+- HTML 태그 금지, 플레인 텍스트만`
   },
   strategist: {
-    name: '👑 전략가',
+    name: '전략가',
     emoji: '👑',
-    system: `너는 막돈 Think Tank의 "전략가"야.
+    system: `너는 막돈 Think Tank의 "전략가"야. 실행 가능한 전략을 제시해.
 
-출력 형식 (반드시 지켜):
-▪️ [전략 포인트] — 설명 (80자 이내)
-▪️ [전략 포인트] — 설명 (80자 이내)
-▪️ [전략 포인트] — 설명 (80자 이내)
+반드시 아래 형식 그대로 출력해:
+전략 방향을 한 문장으로 (60자 이내)
+
+① 전략 포인트
+설명 (80자 이내, 구체적 행동 포함)
+
+② 전략 포인트
+설명 (80자 이내)
+
+③ 전략 포인트
+설명 (80자 이내)
 
 규칙:
-- 장기적 관점, 큰 그림에 집중
-- 구체적 행동 계획 (진입/청산/관망 등)
-- 리스크 대비 수익 비율 고려
-- 3~4개 포인트, 각 80자 이내
-- 마크다운(##, **, -) 절대 금지. HTML 태그 금지. 플레인 텍스트만.`
+- 3개 포인트, 각 설명 80자 이내 한 줄
+- 장기적 관점, 구체적 행동 계획 (진입/청산/관망 등)
+- 마크다운(##, **, -, *) 절대 금지
+- HTML 태그 금지, 플레인 텍스트만`
   },
   researcher: {
-    name: '🔍 리서처',
+    name: '리서처',
     emoji: '🔍',
-    system: `너는 막돈 Think Tank의 "리서처"야.
+    system: `너는 막돈 Think Tank의 "리서처"야. 맥락과 배경 정보를 제공해.
 
-출력 형식 (반드시 지켜):
-▪️ [팩트/배경] — 설명 (80자 이내)
-▪️ [팩트/배경] — 설명 (80자 이내)
-▪️ [팩트/배경] — 설명 (80자 이내)
+반드시 아래 형식 그대로 출력해:
+배경 맥락을 한 문장으로 (60자 이내)
+
+① 팩트/배경
+설명 (80자 이내)
+
+② 팩트/배경
+설명 (80자 이내)
+
+③ 팩트/배경
+설명 (80자 이내)
 
 규칙:
+- 3개 포인트, 각 설명 80자 이내 한 줄
 - 과거 유사 사례, 역사적 패턴 참조
-- 관련 인물/기관/프로젝트 동향
-- 각 포인트 앞에 [사실]/[해석]/[추정] 표시
-- 3~4개 포인트, 각 80자 이내
-- 마크다운(##, **, -) 절대 금지. HTML 태그 금지. 플레인 텍스트만.`
+- 마크다운(##, **, -, *) 절대 금지
+- HTML 태그 금지, 플레인 텍스트만`
   },
   moderator: {
-    name: '🎯 중재자',
+    name: '중재자',
     emoji: '🎯',
     system: `너는 막돈 Think Tank의 "중재자"야. 모든 에이전트 의견을 종합해서 최종 결론을 내려.
 
-출력 형식 (반드시 지켜):
-[한 줄 결론 — 가장 중요한 판단 1문장]
+반드시 아래 형식 그대로 출력해:
+최종 결론을 한 문장으로 (60자 이내)
 
-▪️ 합의점 — (80자 이내)
-▪️ 쟁점 — (80자 이내)
-▪️ 추천 행동 — (80자 이내)
-▪️ 리스크 — (80자 이내)
+① 합의점
+설명 (80자 이내)
 
-확신도: 🟢/🟡/🔴
+② 핵심 쟁점
+설명 (80자 이내)
+
+③ 추천 행동
+설명 (80자 이내)
+
+④ 주의할 리스크
+설명 (80자 이내)
+
+확신도: 🟢높음 또는 🟡중간 또는 🔴낮음
 
 규칙:
-- 각 에이전트 핵심을 녹여서 종합 (에이전트별 요약 하지 마)
+- 에이전트별로 요약하지 마. 핵심만 녹여서 종합
 - 최종 판단을 명확하게
-- 마크다운(##, **, -) 절대 금지. HTML 태그 금지. 플레인 텍스트만.`
+- 마크다운(##, **, -, *) 절대 금지
+- HTML 태그 금지, 플레인 텍스트만`
   },
   blogger: {
     name: '📝 블로거',
@@ -332,49 +367,49 @@ async function runDiscussion(question) {
   return results;
 }
 
-// ── 토론 결과를 텔레그램 메시지로 포맷 ──
+// ── 응답 텍스트 정리 (마크다운 잔재 제거 + 포맷팅) ──
+function cleanAgentResponse(text) {
+  return text
+    .replace(/^#{1,3}\s+/gm, '')         // ## 헤더 제거
+    .replace(/\*\*(.*?)\*\*/g, '$1')      // **볼드** 제거
+    .replace(/^\* /gm, '▪️ ')             // * 목록 → ▪️
+    .replace(/^- /gm, '▪️ ')              // - 목록 → ▪️
+    .replace(/^(\d+)\.\s/gm, '  $1. ')    // 번호 목록 정리
+    .trim();
+}
+
+// ── 토론 결과를 텔레그램 메시지로 포맷 (단일 메시지) ──
 function formatDiscussion(question, results) {
-  const msgs = [];
+  let msg = `🏛️ <b>Think Tank 토론</b>\n\n❓ <b>${question}</b>\n`;
 
-  // 헤더 메시지
-  msgs.push(
-    `🏛️ <b>Think Tank 토론</b>\n\n` +
-    `❓ <b>${question}</b>`
-  );
-
-  // 각 에이전트 의견을 개별 메시지로 (blockquote 활용)
-  const agentOpinions = results.filter(r => r.agentId !== 'moderator');
-  for (const r of agentOpinions) {
-    // 응답에서 마크다운 잔재 제거
-    let text = r.response
-      .replace(/^#{1,3}\s+/gm, '')      // ## 헤더 제거
-      .replace(/\*\*(.*?)\*\*/g, '$1')   // **볼드** 제거
-      .replace(/^- /gm, '▪️ ')           // - 목록을 ▪️로
-      .trim();
-
-    msgs.push(
-      `<blockquote><b>${r.emoji} ${r.name.replace(/^[^\s]+\s/, '')}</b></blockquote>\n` +
-      text
-    );
+  // 에이전트 의견 (중재자 제외)
+  const opinions = results.filter(r => r.agentId !== 'moderator');
+  for (const r of opinions) {
+    const text = cleanAgentResponse(r.response);
+    msg += `\n<blockquote><b>${r.emoji} ${r.name}</b></blockquote>\n${text}\n`;
   }
 
-  // 중재자 최종 결론 (강조)
+  // 중재자 최종 결론
   const mod = results.find(r => r.agentId === 'moderator');
   if (mod) {
-    let text = mod.response
-      .replace(/^#{1,3}\s+/gm, '')
-      .replace(/\*\*(.*?)\*\*/g, '$1')
-      .replace(/^- /gm, '▪️ ')
-      .trim();
-
-    msgs.push(
-      `<blockquote><b>🎯 최종 결론</b></blockquote>\n` +
-      text + `\n\n` +
-      `<b><u>막돈 Think Tank</u></b> 🏛️`
-    );
+    const text = cleanAgentResponse(mod.response);
+    msg += `\n<blockquote><b>🎯 최종 결론</b></blockquote>\n${text}\n`;
   }
 
-  return msgs;
+  msg += `\n<b><u>막돈 Think Tank</u></b> 🏛️`;
+
+  // 텔레그램 메시지 길이 제한 (4096자) 대응
+  if (msg.length <= 4096) {
+    return [msg];
+  }
+  // 4096자 초과 시 결론 부분만 분리
+  const splitIdx = msg.lastIndexOf('<blockquote><b>🎯 최종 결론</b></blockquote>');
+  if (splitIdx > 0) {
+    const part1 = msg.slice(0, splitIdx).trim();
+    const part2 = msg.slice(splitIdx).trim();
+    return [part1, part2];
+  }
+  return [msg.slice(0, 4096)];
 }
 
 // ── Brave Search API (웹 검색) ──
