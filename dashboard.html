@@ -159,6 +159,22 @@ body{font-family:'Courier New',monospace;background:#1a1a2e;color:#e0e0e0;overfl
 @keyframes pxBob{50%{transform:translateY(-2px)}}
 .pix-agent.work-anim{animation:pxWork 1s ease-in-out infinite}
 @keyframes pxWork{25%{transform:translateX(-1px)}75%{transform:translateX(1px)}}
+/* Flip agent when moving left */
+.pix-agent.face-left .pix-body{transform:scaleX(-1)}
+
+/* Collab indicator */
+.collab-line{position:absolute;z-index:9;pointer-events:none;opacity:0;transition:opacity .5s}
+.collab-line.active{opacity:1}
+
+/* Day/night ambient */
+.office.time-morning{background:#e8dcc0;box-shadow:inset 0 0 60px rgba(255,200,100,.15)}
+.office.time-day{background:#d4c4a0}
+.office.time-evening{background:#b8a880;box-shadow:inset 0 0 80px rgba(255,140,50,.12)}
+.office.time-night{background:#8a7a60;box-shadow:inset 0 0 100px rgba(0,0,40,.25)}
+
+/* Working particles */
+.work-particle{position:absolute;z-index:15;pointer-events:none;font-size:10px;animation:particleFloat 2s ease-out forwards;opacity:0}
+@keyframes particleFloat{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-30px)}}
 
 /* Speech bubble */
 .speech{position:absolute;top:-46px;left:50%;transform:translateX(-50%);background:#111e;color:#fff;font-size:13px;padding:5px 10px;border-radius:4px;white-space:nowrap;opacity:0;transition:opacity .3s;pointer-events:none;border:2px solid #666;z-index:20;max-width:200px;overflow:hidden;text-overflow:ellipsis;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.5)}
@@ -537,22 +553,72 @@ function addF(type,idx,msg){
 // ═══════════════════════════════════════
 // AGENT MOVEMENT
 // ═══════════════════════════════════════
-function moveAgent(i){
-  const a=agents[i],rm=ROOMS[a.room];
+function moveAgent(i, targetRoom){
+  const a=agents[i];
+  const rm = targetRoom !== undefined ? ROOMS[targetRoom] : ROOMS[a.room];
+  if(targetRoom !== undefined) a.currentRoom = targetRoom;
   a.tx=rm.x+30+Math.random()*(rm.w-70);
   a.ty=rm.y+40+Math.random()*(rm.h-60);
   a.moving=true;
   const el=document.getElementById(`pa-${a.id}`);
   if(!el)return;
-  el.classList.remove('idle-anim','work-anim');
+  // Face direction based on movement
+  el.classList.remove('idle-anim','work-anim','face-left');
   el.classList.add('walking');
+  if(a.tx < a.x) el.classList.add('face-left');
   el.style.left=a.tx+'px';
   el.style.top=a.ty+'px';
+  // Transition time based on distance
+  const dist = Math.hypot(a.tx-a.x, a.ty-a.y);
+  const dur = Math.min(Math.max(dist * 3, 800), 2500);
+  el.style.transition=`left ${dur}ms ease-in-out, top ${dur}ms ease-in-out`;
   setTimeout(()=>{
     a.x=a.tx;a.y=a.ty;a.moving=false;
-    el.classList.remove('walking');
+    el.classList.remove('walking','face-left');
     el.classList.add(a.state==='working'?'work-anim':'idle-anim');
-  },800);
+    el.style.transition='left .8s ease-in-out, top .8s ease-in-out';
+  },dur);
+}
+
+// Agent roams to meeting room, break room, or back to own room
+function roamAgent(i){
+  const a=agents[i];
+  if(a.moving) return;
+  const roll = Math.random();
+  const curRoom = a.currentRoom !== undefined ? a.currentRoom : a.room;
+  if(curRoom !== a.room){
+    // 70% chance to return home
+    if(roll < 0.7){ moveAgent(i, a.room); return; }
+  }
+  if(roll < 0.15) moveAgent(i, 5);       // 회의실
+  else if(roll < 0.25) moveAgent(i, 10);  // 휴게실
+  else moveAgent(i);                       // 자기 방 내 이동
+}
+
+// Spawn floating particle near working agent
+function spawnParticle(agentId){
+  const el = document.getElementById(`pa-${agentId}`);
+  if(!el) return;
+  const symbols = ['⚡','✦','💡','📊','🔍','✏️','💬','⚙️'];
+  const p = document.createElement('span');
+  p.className = 'work-particle';
+  p.textContent = symbols[Math.random()*symbols.length|0];
+  p.style.left = (parseInt(el.style.left)||0) + 10 + Math.random()*20 + 'px';
+  p.style.top = (parseInt(el.style.top)||0) - 10 + 'px';
+  document.getElementById('office').appendChild(p);
+  setTimeout(()=>p.remove(), 2000);
+}
+
+// Day/night cycle based on real time
+function updateAmbience(){
+  const ofc = document.querySelector('.office');
+  if(!ofc) return;
+  const h = new Date().getHours();
+  ofc.classList.remove('time-morning','time-day','time-evening','time-night');
+  if(h>=6 && h<10) ofc.classList.add('time-morning');
+  else if(h>=10 && h<18) ofc.classList.add('time-day');
+  else if(h>=18 && h<22) ofc.classList.add('time-evening');
+  else ofc.classList.add('time-night');
 }
 
 // ═══════════════════════════════════════
@@ -591,7 +657,7 @@ function setState(i,s){
 // ═══════════════════════════════════════
 const DUR={idle:()=>3000+Math.random()*5000,thinking:()=>1500+Math.random()*2000,working:()=>5000+Math.random()*8000};
 const NEXT={idle:'thinking',thinking:'working',working:'idle'};
-let lt=0,ct=10000+Math.random()*15000,tgTimer=0;
+let lt=0,ct=10000+Math.random()*15000,tgTimer=0,roamTimer=0,particleTimer=0,ambienceTimer=0;
 
 function tick(ts){
   if(!lt)lt=ts;const dt=ts-lt;lt=ts;
@@ -605,12 +671,33 @@ function tick(ts){
       const i1=Math.random()*agents.length|0;
       let i2=(i1+1+Math.random()*(agents.length-1)|0)%agents.length;
       setState(i1,'working');setState(i2,'working');
+      // Collaboration: one agent walks to the other's room
+      moveAgent(i1, agents[i2].room);
       addF('collab',i1,`🤝 ${agents[i2].name}와 협업`);
       ct=15000+Math.random()*20000;
+    }
+    // Idle agents occasionally roam
+    roamTimer-=dt;
+    if(roamTimer<=0){
+      const idleAgents=agents.map((a,i)=>({a,i})).filter(o=>o.a.state==='idle'&&!o.a.moving);
+      if(idleAgents.length>0){
+        const pick=idleAgents[Math.random()*idleAgents.length|0];
+        roamAgent(pick.i);
+      }
+      roamTimer=4000+Math.random()*6000;
+    }
+    // Working agents emit particles
+    particleTimer-=dt;
+    if(particleTimer<=0){
+      agents.forEach(a=>{if(a.state==='working')spawnParticle(a.id);});
+      particleTimer=1500+Math.random()*2000;
     }
     // Update TG schedule every 30s
     tgTimer-=dt;
     if(tgTimer<=0){renderTGSchedule();tgTimer=30000;}
+    // Ambience every 60s
+    ambienceTimer-=dt;
+    if(ambienceTimer<=0){updateAmbience();ambienceTimer=60000;}
   }
   requestAnimationFrame(tick);
 }
@@ -797,7 +884,8 @@ function init(){
   }));
   window.addEventListener('resize',scaleOffice);
   addF('sys',null,'🏢 <b>Think Tank HQ</b> online');
-  agents.forEach((a,i)=>setTimeout(()=>{setState(i,'thinking');addF('sys',i,`${a.name} 접속`);},400+i*300));
+  updateAmbience();
+  agents.forEach((a,i)=>{a.currentRoom=a.room;setTimeout(()=>{setState(i,'thinking');addF('sys',i,`${a.name} 접속`);},400+i*300);});
 
   // Live data polling
   fetchStatus();
