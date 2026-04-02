@@ -827,6 +827,7 @@ const WORKFLOWS = {
   shorts:       { file: 'shorts.yml',        name: '🎬 숏폼 영상',     time: '10:00/22:00', agent: 'media' },
   longform:     { file: 'longform.yml',     name: '🎬 주간 롱폼',     time: '월 08:00', agent: 'media' },
   podcast:      { file: 'podcast.yml',      name: '🎙️ AI 토론회',    time: '금 22:00', agent: 'media' },
+  deepdive:     { file: 'deepdive.yml',     name: '🔬 딥다이브',      time: '수 20:00', agent: 'media' },
 };
 
 // ── API Routes ──
@@ -1511,6 +1512,7 @@ server.listen(PORT, () => {
       { cron: '0 13 * * *',    key: 'shorts',      label: '숏폼 저녁트렌드' },    // 22:00 KST
       { cron: '0 23 * * 0',    key: 'longform',    label: '주간 롱폼 영상' },     // 월요일 08:00 KST
       { cron: '0 13 * * 5',    key: 'podcast',     label: 'AI 토론회 팟캐스트' }, // 금요일 22:00 KST
+      { cron: '0 11 * * 3',    key: 'deepdive',    label: '딥다이브 분석 영상' },  // 수요일 20:00 KST
     ];
 
     for (const s of SCHEDULE) {
