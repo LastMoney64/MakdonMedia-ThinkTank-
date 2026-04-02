@@ -1509,7 +1509,6 @@ server.listen(PORT, () => {
       { cron: '0 13 * * 1-5',  key: 'blog_ai',     label: '블로그 AI트렌드' },   // 22:00 KST
       { cron: '0 1 * * 0',     key: 'blog_weekly', label: '블로그 주간리포트' }, // 일요일 10:00 KST
       { cron: '0 1 * * *',     key: 'shorts',      label: '숏폼 모닝브리핑' },    // 10:00 KST
-      { cron: '0 13 * * *',    key: 'shorts',      label: '숏폼 저녁트렌드' },    // 22:00 KST
       { cron: '0 23 * * 0',    key: 'longform',    label: '주간 롱폼 영상' },     // 월요일 08:00 KST
       { cron: '0 13 * * 5',    key: 'podcast',     label: 'AI 토론회 팟캐스트' }, // 금요일 22:00 KST
       { cron: '0 11 * * 3',    key: 'deepdive',    label: '딥다이브 분석 영상' },  // 수요일 20:00 KST
