@@ -278,7 +278,7 @@ const AGENTS = {
 - SEO 최적화된 제목과 본문 작성
 - 초보자도 이해할 수 있는 쉬운 설명
 - 투자/경제/AI 분야 전문 블로그 톤
-- Blogger, Tistory 멀티플랫폼 발행 담당
+- Blogger, Tistory, WordPress 멀티플랫폼 발행 담당
 - 3000~7000자 심층 분석 콘텐츠 제작`
   },
   translator: {
