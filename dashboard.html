@@ -240,6 +240,73 @@ body{font-family:'Courier New',monospace;background:#1a1a2e;color:#e0e0e0;overfl
 .cmd-acts{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
 .cmd-a{padding:6px 12px;border:1px solid #333;background:transparent;color:#888;font-size:13px;cursor:pointer;font-family:'Courier New',monospace;transition:all .2s}
 .cmd-a:hover{border-color:#7af;color:#ccc}
+
+/* ── BLOG PUBLISH PANEL ── */
+.blog-pub-item{display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:4px;background:#1a1a2e;border-radius:3px;font-size:13px;border-left:3px solid #ff7043}
+.blog-pub-name{flex:1;color:#ccc;font-size:13px}
+.blog-pub-time{font-size:11px;color:#666;width:44px}
+.blog-pub-platforms{display:flex;gap:6px}
+.blog-pub-badge{font-size:11px;padding:2px 6px;border-radius:2px;font-weight:700}
+.blog-pub-badge.ok{background:#1a2e1a;color:#4f4;border:1px solid #3a5a3a}
+.blog-pub-badge.fail{background:#2e1a1a;color:#f44;border:1px solid #5a3a3a}
+.blog-pub-badge.pending{background:#2e2a1a;color:#fa0;border:1px solid #5a5a3a}
+
+/* ── VIDEO PIPELINE ── */
+.video-pipe-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px 10px}
+.video-pipe-card{padding:10px;background:#1a1a2e;border-radius:4px;border-left:3px solid #555;font-size:13px}
+.video-pipe-card.shorts{border-left-color:#0ff}
+.video-pipe-card.longform{border-left-color:#44f}
+.video-pipe-card.deepdive{border-left-color:#a4e}
+.video-pipe-card.podcast{border-left-color:#fa0}
+.video-pipe-title{font-weight:900;margin-bottom:4px}
+.video-pipe-sched{font-size:11px;color:#666;margin-bottom:4px}
+.video-pipe-status{font-size:12px;font-weight:700}
+.video-pipe-status.ok{color:#4f4}
+.video-pipe-status.fail{color:#f44}
+.video-pipe-status.pending{color:#fa0}
+.video-pipe-status.idle{color:#555}
+
+/* ── SCHEDULE TIMELINE ── */
+.sched-timeline{padding:4px 8px}
+.sched-item{display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:3px;background:#1a1a2e;border-radius:3px;font-size:13px;border-left:3px solid #333;transition:background .3s}
+.sched-item.done{border-left-color:#4f4}
+.sched-item.upcoming{border-left-color:#fa0;background:#2e2a1a}
+.sched-item.failed{border-left-color:#f44;background:#2e1a1a}
+.sched-item.pending{border-left-color:#555}
+.sched-item.current-marker{box-shadow:0 0 8px rgba(120,170,255,.3);border-left-color:#7af}
+.sched-time{font-size:12px;color:#888;width:40px;flex-shrink:0;font-weight:700}
+.sched-emoji{width:20px;text-align:center;flex-shrink:0}
+.sched-name{flex:1;color:#ccc}
+.sched-dot{width:8px;height:8px;flex-shrink:0;border-radius:0}
+.sched-dot.done{background:#4f4}
+.sched-dot.upcoming{background:#fa0;animation:autoPulse 1.5s infinite}
+.sched-dot.failed{background:#f44}
+.sched-dot.pending{background:#555}
+.sched-day-note{font-size:10px;color:#666;margin-left:4px}
+
+/* ── STATS TAB ── */
+.stats-wrap{padding:8px}
+.stats-card{background:#1a1a2e;border-radius:4px;padding:12px;margin-bottom:10px;border:1px solid #2a2a4a}
+.stats-card-title{font-size:14px;font-weight:900;color:#7af;margin-bottom:10px}
+.stats-bar-wrap{margin-bottom:8px}
+.stats-bar-label{font-size:12px;color:#aaa;margin-bottom:3px;display:flex;justify-content:space-between}
+.stats-bar-track{height:12px;background:#222;border-radius:0;overflow:hidden;border:1px solid #333}
+.stats-bar-fill{height:100%;transition:width .5s;border-radius:0}
+.stats-bar-fill.green{background:#4f4}
+.stats-bar-fill.cyan{background:#0ff}
+.stats-bar-fill.blue{background:#44f}
+.stats-bar-fill.purple{background:#a4e}
+.stats-bar-fill.orange{background:#fa0}
+.stats-bar-fill.red{background:#f44}
+.stats-big-num{font-size:28px;font-weight:900;color:#4f4;text-align:center;margin:6px 0}
+.stats-sub{font-size:12px;color:#666;text-align:center}
+.stats-fail-item{display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:3px;background:#2e1a1a;border-radius:3px;font-size:12px;border-left:2px solid #f44}
+.stats-fail-time{color:#666;width:40px;flex-shrink:0}
+.stats-fail-name{flex:1;color:#ccc}
+
+/* ── AGENT FLASH EFFECTS ── */
+.agent-flash{position:absolute;z-index:20;pointer-events:none;font-size:16px;animation:agentFlash 2s ease-out forwards;opacity:0;white-space:nowrap}
+@keyframes agentFlash{0%{opacity:0;transform:translateY(0) scale(0.5)}15%{opacity:1;transform:translateY(-10px) scale(1.1)}30%{transform:translateY(-15px) scale(1)}80%{opacity:1;transform:translateY(-25px)}100%{opacity:0;transform:translateY(-35px)}}
 </style>
 </head>
 <body>
@@ -259,7 +326,9 @@ body{font-family:'Courier New',monospace;background:#1a1a2e;color:#e0e0e0;overfl
   <div class="panel">
     <div class="tab-bar">
       <button class="tab-btn active" data-tab="log">📡 Activity</button>
-      <button class="tab-btn" data-tab="auto">⚡ Automation</button>
+      <button class="tab-btn" data-tab="auto">⚡ Auto</button>
+      <button class="tab-btn" data-tab="sched">📅 Schedule</button>
+      <button class="tab-btn" data-tab="stats">📊 Stats</button>
     </div>
     <div class="tab-content">
       <div class="tab-page active" id="tab-log">
@@ -271,22 +340,29 @@ body{font-family:'Courier New',monospace;background:#1a1a2e;color:#e0e0e0;overfl
           <div class="auto-hdr">📨 텔레그램 막돈방</div>
           <div id="tg-schedule"></div>
         </div>
-        <!-- 콘텐츠 파이프라인 -->
+        <!-- 블로그 발행 현황 -->
         <div class="auto-section">
-          <div class="auto-hdr">🚀 콘텐츠 파이프라인</div>
-          <div class="pipe-visual">
-            <div class="pipe-step" id="pipe-blog"><span class="pipe-icon">📝</span><span class="pipe-label">Blogger 포스팅</span><span class="auto-status pending" id="pipe-blog-st">대기</span></div>
-            <div class="pipe-arrow">↓</div>
-            <div class="pipe-step" id="pipe-insta"><span class="pipe-icon">📸</span><span class="pipe-label">Instagram 카드</span><span class="auto-status pending" id="pipe-insta-st">대기</span></div>
-            <div class="pipe-arrow">↓</div>
-            <div class="pipe-step" id="pipe-shorts"><span class="pipe-icon">🎬</span><span class="pipe-label">YouTube Shorts</span><span class="auto-status pending" id="pipe-shorts-st">대기</span></div>
-          </div>
+          <div class="auto-hdr">📝 블로그 발행 현황</div>
+          <div id="blog-publish"></div>
+        </div>
+        <!-- 영상 파이프라인 -->
+        <div class="auto-section">
+          <div class="auto-hdr">🎬 영상 파이프라인</div>
+          <div class="video-pipe-grid" id="video-pipeline"></div>
         </div>
         <!-- 실행 이력 -->
         <div class="auto-section">
           <div class="auto-hdr">📋 최근 실행 이력</div>
           <div id="auto-history"></div>
         </div>
+      </div>
+      <!-- Schedule Tab -->
+      <div class="tab-page" id="tab-sched">
+        <div class="sched-timeline" id="sched-timeline"></div>
+      </div>
+      <!-- Stats Tab -->
+      <div class="tab-page" id="tab-stats">
+        <div class="stats-wrap" id="stats-wrap"></div>
       </div>
     </div>
     <div class="cmd">
@@ -384,6 +460,44 @@ const TG_SCHEDULE=[
   {time:'23:40',name:'🌙 저녁 브리핑',topic:'브리핑',days:'매일',wf:'evening'},
   {time:'23:55',name:'📊 일별 요약',topic:'일별요약',days:'매일',wf:'summary'}
 ];
+
+// Blog workflows
+const BLOG_WORKFLOWS=[
+  {id:'blog_market',name:'📈 시장 리포트',time:'08:00',days:'매일',wf:'blog_market'},
+  {id:'blog_issue',name:'📝 핫이슈',time:'16:00',days:'평일',wf:'blog_issue'},
+  {id:'blog_ai',name:'🤖 AI 리포트',time:'22:00',days:'평일',wf:'blog_ai'},
+  {id:'blog_weekly',name:'📊 주간 리포트',time:'10:00',days:'일',wf:'blog_weekly'}
+];
+
+// Video types
+const VIDEO_TYPES=[
+  {id:'shorts',name:'숏폼',emoji:'🎬',time:'매일 10:00',cls:'shorts',wf:'shorts'},
+  {id:'longform',name:'롱폼',emoji:'🎬',time:'월 08:00',cls:'longform',wf:'longform'},
+  {id:'deepdive',name:'딥다이브',emoji:'🔬',time:'수 20:00',cls:'deepdive',wf:'deepdive'},
+  {id:'podcast',name:'팟캐스트',emoji:'🎙️',time:'금 22:00',cls:'podcast',wf:'podcast'}
+];
+
+// Full unified schedule (all 16 workflows)
+const FULL_SCHEDULE=[
+  {time:'08:00',emoji:'📈',name:'블로그 시장리포트',type:'blog',wf:'blog_market',days:'매일'},
+  {time:'09:30',emoji:'☀️',name:'아침 브리핑',type:'tg',wf:'morning',days:'매일'},
+  {time:'10:00',emoji:'🎬',name:'숏폼 영상',type:'video',wf:'shorts',days:'매일'},
+  {time:'10:00',emoji:'📊',name:'블로그 주간리포트',type:'blog',wf:'blog_weekly',days:'일'},
+  {time:'11:00',emoji:'🪙',name:'코인 분석',type:'tg',wf:'coin',days:'평일'},
+  {time:'12:00',emoji:'🛡️',name:'페일세이프',type:'system',wf:'failsafe',days:'매일'},
+  {time:'14:00',emoji:'💭',name:'KOL 인사이트',type:'tg',wf:'kol',days:'평일'},
+  {time:'16:00',emoji:'📝',name:'블로그 핫이슈',type:'blog',wf:'blog_issue',days:'평일'},
+  {time:'18:00',emoji:'🤖',name:'AI 리포트',type:'tg',wf:'ai',days:'평일'},
+  {time:'20:00',emoji:'🔬',name:'딥다이브',type:'video',wf:'deepdive',days:'수'},
+  {time:'22:00',emoji:'🌏',name:'매크로 리포트',type:'tg',wf:'macro',days:'평일'},
+  {time:'22:00',emoji:'🤖',name:'블로그 AI',type:'blog',wf:'blog_ai',days:'평일'},
+  {time:'22:00',emoji:'🎙️',name:'팟캐스트',type:'video',wf:'podcast',days:'금'},
+  {time:'23:40',emoji:'🌙',name:'저녁 브리핑',type:'tg',wf:'evening',days:'매일'},
+  {time:'23:55',emoji:'📊',name:'일별 요약',type:'tg',wf:'summary',days:'매일'}
+];
+
+// Stored logs for stats calculations
+let allLogs=[];
 
 // ═══════════════════════════════════════
 // STATE
@@ -527,12 +641,219 @@ function renderAutoHistory(){
 }
 
 function updatePipeline(step,status){
-  const el=document.getElementById('pipe-'+step);
-  const st=document.getElementById('pipe-'+step+'-st');
-  if(!el||!st)return;
-  el.classList.toggle('active',status==='running');
-  st.className='auto-status '+status;
-  st.textContent=({running:'진행중',done:'완료',pending:'대기'})[status]||status;
+  // Legacy compat - no-op since pipeline replaced
+}
+
+// ── BLOG PUBLISH PANEL ──
+function renderBlogPublish(){
+  const el=document.getElementById('blog-publish');
+  if(!el)return;
+  const now=new Date();
+  const hh=now.getHours(),mm=now.getMinutes();
+  const nowMin=hh*60+mm;
+  const dayOfWeek=now.getDay();
+  const isWeekday=dayOfWeek>0&&dayOfWeek<6;
+  const isSunday=dayOfWeek===0;
+
+  el.innerHTML=BLOG_WORKFLOWS.map(b=>{
+    const [sh,sm]=b.time.split(':').map(Number);
+    const sMin=sh*60+sm;
+    const skip=(b.days==='평일'&&!isWeekday)||(b.days==='일'&&!isSunday);
+
+    // Check logs for real status
+    let bloggerSt='pending',wpSt='pending';
+    if(skip){bloggerSt='pending';wpSt='pending';}
+    else if(nowMin>=sMin+60){bloggerSt='pending';wpSt='pending';}
+
+    // Check actual logs
+    const today=now.toISOString().slice(0,10);
+    const blogLogs=allLogs.filter(l=>l.type&&l.type.includes(b.id.replace('blog_',''))&&l.timestamp&&l.timestamp.startsWith(today));
+    blogLogs.forEach(l=>{
+      const detail=(l.detail||'').toLowerCase();
+      if(detail.includes('성공')&&detail.includes('blogger'))bloggerSt='ok';
+      if(detail.includes('실패')&&detail.includes('blogger'))bloggerSt='fail';
+      if(detail.includes('성공')&&detail.includes('wordpress'))wpSt='ok';
+      if(detail.includes('실패')&&detail.includes('wordpress'))wpSt='fail';
+      // Also check generic ok status
+      if(l.status==='ok'&&!detail){bloggerSt='ok';wpSt='ok';}
+    });
+
+    if(skip){bloggerSt='pending';wpSt='pending';}
+
+    const badgeCls=(st)=>st==='ok'?'ok':st==='fail'?'fail':'pending';
+    const badgeTxt=(st)=>st==='ok'?'✅':st==='fail'?'❌':'⏳';
+
+    return `<div class="blog-pub-item">
+      <span class="blog-pub-time">${b.time}</span>
+      <span class="blog-pub-name">${b.name}${skip?' <span style="color:#555;font-size:10px">(휴일)</span>':''}</span>
+      <div class="blog-pub-platforms">
+        <span class="blog-pub-badge ${badgeCls(bloggerSt)}">B ${badgeTxt(bloggerSt)}</span>
+        <span class="blog-pub-badge ${badgeCls(wpSt)}">WP ${badgeTxt(wpSt)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── VIDEO PIPELINE ──
+function renderVideoPipeline(){
+  const el=document.getElementById('video-pipeline');
+  if(!el)return;
+  const now=new Date();
+  const dayOfWeek=now.getDay();
+  const dayNames={0:'일',1:'월',2:'화',3:'수',4:'목',5:'금',6:'토'};
+  const todayName=dayNames[dayOfWeek];
+
+  el.innerHTML=VIDEO_TYPES.map(v=>{
+    // Check if this video runs today
+    const schedDay=v.time.split(' ')[0];
+    const isToday=schedDay==='매일'||schedDay===todayName;
+
+    // Check logs for status
+    let status='idle';
+    if(isToday){
+      status='pending';
+      const today=now.toISOString().slice(0,10);
+      const vLogs=allLogs.filter(l=>l.type&&l.type.includes(v.wf)&&l.timestamp&&l.timestamp.startsWith(today));
+      if(vLogs.some(l=>l.status==='ok'))status='ok';
+      else if(vLogs.some(l=>l.status&&l.status!=='ok'))status='fail';
+    }
+
+    const stText={ok:'완료',fail:'실패',pending:'대기',idle:'해당없음'}[status];
+
+    return `<div class="video-pipe-card ${v.cls}">
+      <div class="video-pipe-title">${v.emoji} ${v.name}</div>
+      <div class="video-pipe-sched">${v.time}</div>
+      <div class="video-pipe-status ${status}">${stText}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── SCHEDULE TIMELINE ──
+function renderScheduleTimeline(){
+  const el=document.getElementById('sched-timeline');
+  if(!el)return;
+  const now=new Date();
+  const hh=now.getHours(),mm=now.getMinutes();
+  const nowMin=hh*60+mm;
+  const dayOfWeek=now.getDay();
+  const dayNames={0:'일',1:'월',2:'화',3:'수',4:'목',5:'금',6:'토'};
+  const todayName=dayNames[dayOfWeek];
+  const isWeekday=dayOfWeek>0&&dayOfWeek<6;
+  const today=now.toISOString().slice(0,10);
+
+  // Find closest upcoming item for current marker
+  let closestIdx=-1,closestDiff=Infinity;
+
+  const items=FULL_SCHEDULE.map((s,idx)=>{
+    const [sh,sm]=s.time.split(':').map(Number);
+    const sMin=sh*60+sm;
+
+    // Check if this runs today
+    let runsToday=false;
+    if(s.days==='매일')runsToday=true;
+    else if(s.days==='평일'&&isWeekday)runsToday=true;
+    else if(s.days===todayName)runsToday=true;
+
+    // Determine status
+    let status='pending';
+    if(!runsToday){
+      status='pending';
+    }else{
+      // Check logs
+      const sLogs=allLogs.filter(l=>l.type&&(l.type.includes(s.wf)||l.type.includes(s.name))&&l.timestamp&&l.timestamp.startsWith(today));
+      if(sLogs.some(l=>l.status==='ok'))status='done';
+      else if(sLogs.some(l=>l.status&&l.status!=='ok'))status='failed';
+      else if(nowMin>=sMin+30)status='done'; // assume done if past time
+      else if(nowMin>=sMin-5)status='upcoming';
+      else status='pending';
+    }
+
+    // Track closest upcoming
+    if(runsToday&&sMin>=nowMin&&sMin-nowMin<closestDiff){
+      closestDiff=sMin-nowMin;closestIdx=idx;
+    }
+
+    const dayNote=s.days!=='매일'?`<span class="sched-day-note">(${s.days})</span>`:'';
+
+    return {idx,html:`<div class="sched-item ${status}${!runsToday?' pending':''}" id="sched-${idx}" data-runs="${runsToday}">
+      <span class="sched-time">${s.time}</span>
+      <span class="sched-emoji">${s.emoji}</span>
+      <span class="sched-name">${s.name}${dayNote}</span>
+      <div class="sched-dot ${status}"></div>
+    </div>`};
+  });
+
+  el.innerHTML=items.map(i=>i.html).join('');
+
+  // Highlight current position
+  if(closestIdx>=0){
+    const marker=document.getElementById('sched-'+closestIdx);
+    if(marker)marker.classList.add('current-marker');
+  }
+}
+
+// ── STATS TAB ──
+function renderStats(){
+  const el=document.getElementById('stats-wrap');
+  if(!el)return;
+
+  // Calculate week stats from allLogs
+  const now=new Date();
+  const weekStart=new Date(now);
+  weekStart.setDate(now.getDate()-now.getDay());
+  weekStart.setHours(0,0,0,0);
+  const weekStartStr=weekStart.toISOString().slice(0,10);
+
+  const weekLogs=allLogs.filter(l=>l.timestamp&&l.timestamp>=weekStartStr);
+  const totalRuns=weekLogs.length||0;
+  const okRuns=weekLogs.filter(l=>l.status==='ok').length;
+  const failRuns=weekLogs.filter(l=>l.status&&l.status!=='ok').length;
+  const rate=totalRuns>0?Math.round(okRuns/totalRuns*100):0;
+
+  // Platform breakdown
+  const tgLogs=weekLogs.filter(l=>l.type&&(l.type.includes('morning')||l.type.includes('coin')||l.type.includes('kol')||l.type.includes('ai_report')||l.type.includes('macro')||l.type.includes('evening')||l.type.includes('summary')||l.type.includes('브리핑')));
+  const blogLogs=weekLogs.filter(l=>l.type&&l.type.includes('blog'));
+  const blogOk=blogLogs.filter(l=>l.status==='ok').length;
+  const ytLogs=weekLogs.filter(l=>l.type&&(l.type.includes('shorts')||l.type.includes('longform')||l.type.includes('deepdive')||l.type.includes('podcast')));
+
+  // Top failures
+  const failures=weekLogs.filter(l=>l.status&&l.status!=='ok').slice(-5).reverse();
+
+  el.innerHTML=`
+    <div class="stats-card">
+      <div class="stats-card-title">🎯 이번 주 성공률</div>
+      <div class="stats-big-num">${rate}%</div>
+      <div class="stats-sub">${okRuns} / ${totalRuns} 성공${totalRuns===0?' (데이터 없음)':''}</div>
+      <div style="margin-top:8px">
+        <div class="stats-bar-track"><div class="stats-bar-fill green" style="width:${rate}%"></div></div>
+      </div>
+    </div>
+
+    <div class="stats-card">
+      <div class="stats-card-title">📡 플랫폼별 현황</div>
+      ${renderStatBar('Telegram',tgLogs.length,tgLogs.length,'cyan')}
+      ${renderStatBar('Blogger',blogOk,blogLogs.length,'orange')}
+      ${renderStatBar('WordPress',blogOk,blogLogs.length,'purple')}
+      ${renderStatBar('YouTube',ytLogs.filter(l=>l.status==='ok').length,ytLogs.length,'blue')}
+    </div>
+
+    <div class="stats-card">
+      <div class="stats-card-title">❌ 최근 실패 목록</div>
+      ${failures.length===0?'<div style="color:#555;font-size:12px;padding:6px">실패 기록 없음</div>':
+        failures.map(f=>`<div class="stats-fail-item">
+          <span class="stats-fail-time">${f.timestamp?new Date(f.timestamp).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'--:--'}</span>
+          <span class="stats-fail-name">${f.type||'unknown'}: ${f.detail||f.status||'error'}</span>
+        </div>`).join('')}
+    </div>
+  `;
+}
+
+function renderStatBar(label,ok,total,color){
+  const pct=total>0?Math.round(ok/total*100):0;
+  return `<div class="stats-bar-wrap">
+    <div class="stats-bar-label"><span>${label}</span><span>${ok}/${total}</span></div>
+    <div class="stats-bar-track"><div class="stats-bar-fill ${color}" style="width:${pct}%"></div></div>
+  </div>`;
 }
 
 // ═══════════════════════════════════════
@@ -599,7 +920,20 @@ function roamAgent(i){
 function spawnParticle(agentId){
   const el = document.getElementById(`pa-${agentId}`);
   if(!el) return;
-  const symbols = ['⚡','✦','💡','📊','🔍','✏️','💬','⚙️'];
+  // Agent-specific particles
+  const agentSymbols={
+    blogger:['✍️','📝','📄','🖊️'],
+    media:['🎬','🎥','📹','🎞️'],
+    social:['💖','📸','✨','💫'],
+    telegram:['📨','📡','⚡','🤖'],
+    analyst:['📊','📈','🔢','💹'],
+    advocate:['⚔️','🛡️','❗','🔥'],
+    strategist:['♟️','🎯','🗺️','💎'],
+    writer:['✏️','📰','🗞️','💬'],
+    researcher:['🔍','🔬','📚','🧪'],
+    moderator:['⚖️','🤝','📋','✅']
+  };
+  const symbols = agentSymbols[agentId] || ['⚡','✦','💡','📊','🔍','✏️','💬','⚙️'];
   const p = document.createElement('span');
   p.className = 'work-particle';
   p.textContent = symbols[Math.random()*symbols.length|0];
@@ -607,6 +941,31 @@ function spawnParticle(agentId){
   p.style.top = (parseInt(el.style.top)||0) - 10 + 'px';
   document.getElementById('office').appendChild(p);
   setTimeout(()=>p.remove(), 2000);
+}
+
+// Flash effect above agent (for blog/video success)
+function flashAgentEffect(agentId, text){
+  const el = document.getElementById(`pa-${agentId}`);
+  if(!el) return;
+  const f = document.createElement('span');
+  f.className = 'agent-flash';
+  f.textContent = text;
+  f.style.left = (parseInt(el.style.left)||0) + 5 + 'px';
+  f.style.top = (parseInt(el.style.top)||0) - 30 + 'px';
+  document.getElementById('office').appendChild(f);
+  setTimeout(()=>f.remove(), 2200);
+}
+
+// Check log entries for flash triggers
+function checkLogFlashes(log){
+  if(!log)return;
+  const detail=(log.detail||'').toLowerCase();
+  const type=(log.type||'').toLowerCase();
+  if(log.status==='ok'){
+    if(type.includes('blog'))flashAgentEffect('blogger','📝✅');
+    if(type.includes('shorts')||type.includes('longform')||type.includes('deepdive')||type.includes('podcast'))flashAgentEffect('media','🎬✅');
+  }
+  if(detail.includes('leonardo'))flashAgentEffect('media','🖼️');
 }
 
 // Day/night cycle based on real time
@@ -694,7 +1053,7 @@ function tick(ts){
     }
     // Update TG schedule every 30s
     tgTimer-=dt;
-    if(tgTimer<=0){renderTGSchedule();tgTimer=30000;}
+    if(tgTimer<=0){renderTGSchedule();renderBlogPublish();renderVideoPipeline();renderScheduleTimeline();tgTimer=30000;}
     // Ambience every 60s
     ambienceTimer-=dt;
     if(ambienceTimer<=0){updateAmbience();ambienceTimer=60000;}
@@ -803,8 +1162,18 @@ async function fetchStatus(){
     });
     if(autoHistory.length>30)autoHistory.length=30;
     renderAutoHistory();
+    // Update new panels
+    renderBlogPublish();
+    renderVideoPipeline();
+    renderScheduleTimeline();
+    renderStats();
   }catch(e){
     // API not available, stay in simulation mode
+    // Still render panels with time-based defaults
+    renderBlogPublish();
+    renderVideoPipeline();
+    renderScheduleTimeline();
+    renderStats();
   }
 }
 
@@ -813,24 +1182,42 @@ async function fetchLogs(){
     const r=await fetch('/api/logs');
     const d=await r.json();
     if(!d.ok||!d.logs.length)return;
+
+    // Store all logs for stats and panel calculations
+    const prevLen=allLogs.length;
+    allLogs=d.logs;
+
+    // Check new logs for flash effects
+    if(prevLen>0){
+      const newLogs=d.logs.slice(prevLen);
+      newLogs.forEach(log=>checkLogFlashes(log));
+    }
+
     const recent=d.logs.slice(-10).reverse();
     const tgEl=document.getElementById('tg-schedule');
-    if(!tgEl)return;
-    // Overlay real log status on TG schedule
-    recent.forEach(log=>{
-      const items=tgEl.querySelectorAll('.auto-item');
-      items.forEach(item=>{
-        const nameEl=item.querySelector('.auto-name');
-        if(nameEl&&nameEl.textContent.includes(log.type)){
-          const stEl=item.querySelector('.auto-status');
-          if(stEl&&log.status==='ok'){
-            stEl.textContent='완료';stEl.className='auto-status done';
-            item.className='auto-item done';
-            item.querySelector('.auto-dot').className='auto-dot done';
+    if(tgEl){
+      // Overlay real log status on TG schedule
+      recent.forEach(log=>{
+        const items=tgEl.querySelectorAll('.auto-item');
+        items.forEach(item=>{
+          const nameEl=item.querySelector('.auto-name');
+          if(nameEl&&nameEl.textContent.includes(log.type)){
+            const stEl=item.querySelector('.auto-status');
+            if(stEl&&log.status==='ok'){
+              stEl.textContent='완료';stEl.className='auto-status done';
+              item.className='auto-item done';
+              item.querySelector('.auto-dot').className='auto-dot done';
+            }
           }
-        }
+        });
       });
-    });
+    }
+
+    // Re-render new panels with updated log data
+    renderBlogPublish();
+    renderVideoPipeline();
+    renderScheduleTimeline();
+    renderStats();
   }catch(e){}
 }
 
@@ -862,6 +1249,7 @@ async function triggerWorkflow(key){
 function init(){
   renderOffice();renderChips();initTabs();
   renderTGSchedule();renderAutoHistory();
+  renderBlogPublish();renderVideoPipeline();renderScheduleTimeline();renderStats();
   const inp=document.getElementById('cmd-in'),go=document.getElementById('cmd-go');
   go.addEventListener('click',()=>{handleCmd(inp.value);inp.value='';});
   inp.addEventListener('keydown',e=>{if(e.key==='Enter'){handleCmd(inp.value);inp.value='';}});
