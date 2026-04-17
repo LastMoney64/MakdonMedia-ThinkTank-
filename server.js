@@ -14,6 +14,7 @@ const BRAVE_KEY = process.env.BRAVE_SEARCH_API_KEY || '';
 const COMMAND_TOPIC_ID = 104; // 🎮 명령실 thread_id
 const NEWS_TOPIC_ID = 104; // 뉴스도 명령실에 발송 (나중에 별도 토픽 가능)
 const TRANSLATE_TOPIC_ID = 308; // 🌐 번역방 thread_id
+const AI_TOPIC_ID = 101; // 🤖 AI 토픽 thread_id (X.com URL 자동 캡처 → ai_researcher가 처리)
 const CHAT_OWNER_IDS = ['1668479932']; // 대화형 챗 허용 유저 (LastMoney)
 const REPO_OWNER = 'LastMoney64';
 const REPO_NAME = 'makdon-briefing';
@@ -810,6 +811,133 @@ function ghPost(apiPath, body) {
   });
 }
 
+// ── GitHub PUT (file create/update) ──
+function ghPut(apiPath, body) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const opts = {
+      hostname: 'api.github.com',
+      path: apiPath,
+      method: 'PUT',
+      headers: {
+        'User-Agent': 'ThinkTank-Dashboard',
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    };
+    if (GH_TOKEN) opts.headers['Authorization'] = `token ${GH_TOKEN}`;
+    const req = https.request(opts, (resp) => {
+      let data = '';
+      resp.on('data', c => data += c);
+      resp.on('end', () => {
+        try { resolve({ status: resp.statusCode, data: JSON.parse(data) }); }
+        catch { resolve({ status: resp.statusCode, data: null }); }
+      });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ── 🤖 AI 토픽: X.com URL 메시지 → makdon-briefing/data/incoming_tweets.json 적재 ──
+const TWEET_URL_RE = /https?:\/\/(?:x\.com|twitter\.com|fxtwitter\.com|fixupx\.com|nitter\.[^\/\s]+)\/([\w\d_]+)\/status\/(\d+)/gi;
+const INCOMING_TWEETS_PATH = 'data/incoming_tweets.json';
+
+async function handleAITopicTweet(msg) {
+  try {
+    const text = msg.text || msg.caption || '';
+    const found = [];
+    const seen = new Set();
+    let m;
+    // 본문 추출
+    const reBody = new RegExp(TWEET_URL_RE.source, 'gi');
+    while ((m = reBody.exec(text)) !== null) {
+      const key = `${m[1].toLowerCase()}/${m[2]}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push({ username: m[1], tweet_id: m[2], url: m[0] });
+    }
+    // 텔레그램 entity URL (text_link)
+    for (const ent of (msg.entities || []).concat(msg.caption_entities || [])) {
+      if (ent.type === 'text_link' && ent.url) {
+        const m2 = new RegExp(TWEET_URL_RE.source, 'i').exec(ent.url);
+        if (m2) {
+          const key = `${m2[1].toLowerCase()}/${m2[2]}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            found.push({ username: m2[1], tweet_id: m2[2], url: m2[0] });
+          }
+        }
+      }
+    }
+
+    if (found.length === 0) return; // X.com URL 없으면 스킵
+
+    console.log(`[AI Topic] ${found.length}개 트윗 URL 캡처 → GitHub commit`);
+
+    // 1. 기존 incoming_tweets.json 가져오기 (없으면 빈 배열)
+    const fetchResult = await ghFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/contents/${INCOMING_TWEETS_PATH}`);
+    let existing = [];
+    let sha = null;
+    if (fetchResult.status === 200 && fetchResult.data && fetchResult.data.content) {
+      try {
+        existing = JSON.parse(Buffer.from(fetchResult.data.content, 'base64').toString('utf-8'));
+        sha = fetchResult.data.sha;
+        if (!Array.isArray(existing)) existing = [];
+      } catch { existing = []; }
+    }
+
+    // 2. 중복 제거하면서 추가
+    const existingKeys = new Set(existing.map(t => `${(t.username || '').toLowerCase()}/${t.tweet_id}`));
+    const newOnes = [];
+    for (const f of found) {
+      const key = `${f.username.toLowerCase()}/${f.tweet_id}`;
+      if (!existingKeys.has(key)) {
+        newOnes.push({
+          ...f,
+          submitted_at: msg.date,
+          submitter: (msg.from || {}).username || (msg.from || {}).first_name || 'anonymous',
+          message_id: msg.message_id,
+        });
+      }
+    }
+    if (newOnes.length === 0) {
+      console.log(`[AI Topic] 모두 중복 — commit 스킵`);
+      return;
+    }
+
+    const updated = existing.concat(newOnes);
+    const content = Buffer.from(JSON.stringify(updated, null, 2), 'utf-8').toString('base64');
+    const commitBody = {
+      message: `feat(ai-researcher): ${newOnes.length}개 트윗 큐 추가 (from 🤖 AI 토픽)`,
+      content,
+      branch: 'main',
+    };
+    if (sha) commitBody.sha = sha;
+
+    const putResult = await ghPut(
+      `/repos/${REPO_OWNER}/${REPO_NAME}/contents/${INCOMING_TWEETS_PATH}`,
+      commitBody
+    );
+
+    if (putResult.status === 200 || putResult.status === 201) {
+      console.log(`[AI Topic] commit 성공: ${newOnes.length}개 추가`);
+      // 토픽에 확인 메시지 발송
+      const labels = newOnes.map(t => `@${t.username}`).join(', ');
+      await tgSend(
+        `🤖 트윗 ${newOnes.length}개 큐에 추가됨 (${labels})\n다음 21시 정기 실행에 큐레이션 포함됩니다.`,
+        AI_TOPIC_ID
+      );
+    } else {
+      console.error(`[AI Topic] commit 실패: ${putResult.status}`, putResult.data);
+    }
+  } catch (e) {
+    console.error('[AI Topic] handler 오류:', e.message);
+  }
+}
+
 // ── Workflow name → file mapping ──
 const WORKFLOWS = {
   morning:      { file: 'morning.yml',       name: '☀️ 아침 브리핑',   time: '09:30', agent: 'telegram' },
@@ -1442,17 +1570,22 @@ const server = http.createServer((req, res) => {
       try {
         const update = JSON.parse(body);
         const msg = update.message;
-        if (msg && msg.text && msg.message_id && !isProcessed(msg.message_id)) {
+        if (msg && msg.message_id && !isProcessed(msg.message_id)) {
           const isCommandRoom = msg.message_thread_id === COMMAND_TOPIC_ID || !msg.message_thread_id;
           const isTranslateRoom = msg.message_thread_id === TRANSLATE_TOPIC_ID;
-          if (msg.text.startsWith('/')) {
+          const isAIRoom = msg.message_thread_id === AI_TOPIC_ID;
+
+          if (msg.text && msg.text.startsWith('/')) {
             const cmd = msg.text.split('@')[0].split(' ')[0].toLowerCase();
             handleTgCommand(cmd, msg.text).catch(() => {});
-          } else if (isTranslateRoom && msg.from && CHAT_OWNER_IDS.includes(String(msg.from.id))) {
+          } else if (isAIRoom) {
+            // 🤖 AI 토픽: X.com URL 감지 → makdon-briefing repo 큐에 commit
+            handleAITopicTweet(msg).catch(e => console.error('[AI Topic Error]', e.message));
+          } else if (msg.text && isTranslateRoom && msg.from && CHAT_OWNER_IDS.includes(String(msg.from.id))) {
             handleTranslate(msg.text).catch(e => {
               console.error('[Translate Error]', e.message);
             });
-          } else if (isCommandRoom && msg.from && CHAT_OWNER_IDS.includes(String(msg.from.id))) {
+          } else if (msg.text && isCommandRoom && msg.from && CHAT_OWNER_IDS.includes(String(msg.from.id))) {
             handleChat(msg.text, msg.from.first_name || '').catch(e => {
               console.error('[Chat Error]', e.message);
             });
