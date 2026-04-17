@@ -847,6 +847,7 @@ const INCOMING_TWEETS_PATH = 'data/incoming_tweets.json';
 
 async function handleAITopicTweet(msg) {
   try {
+    await tgSend(`[DEBUG] handler 진입 / text=${(msg.text||'').slice(0,80)}`, AI_TOPIC_ID);
     const text = msg.text || msg.caption || '';
     const found = [];
     const seen = new Set();
@@ -873,6 +874,7 @@ async function handleAITopicTweet(msg) {
       }
     }
 
+    await tgSend(`[DEBUG] 정규식 매칭 결과: ${found.length}개`, AI_TOPIC_ID);
     if (found.length === 0) return; // X.com URL 없으면 스킵
 
     console.log(`[AI Topic] ${found.length}개 트윗 URL 캡처 → GitHub commit`);
@@ -932,9 +934,11 @@ async function handleAITopicTweet(msg) {
       );
     } else {
       console.error(`[AI Topic] commit 실패: ${putResult.status}`, putResult.data);
+      await tgSend(`[DEBUG] GitHub commit 실패: HTTP ${putResult.status} / ${JSON.stringify(putResult.data).slice(0, 200)}`, AI_TOPIC_ID);
     }
   } catch (e) {
     console.error('[AI Topic] handler 오류:', e.message);
+    try { await tgSend(`[DEBUG] handler 에러: ${e.message}`, AI_TOPIC_ID); } catch {}
   }
 }
 
