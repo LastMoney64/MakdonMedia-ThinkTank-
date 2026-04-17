@@ -1598,6 +1598,18 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // 간단 버전 체크 엔드포인트 (배포 확인용)
+  if (pathname === '/version' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      version: 'ai-handler-v1',
+      ai_topic_id: AI_TOPIC_ID,
+      has_ai_handler: typeof handleAITopicTweet === 'function',
+      deployed_at: new Date().toISOString(),
+    }));
+    return;
+  }
+
   // API routes
   if (pathname.startsWith('/api/')) {
     handleAPI(pathname, parsed.query, req, res);
