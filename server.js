@@ -939,6 +939,126 @@ async function handleAITopicTweet(msg) {
   }
 }
 
+// ── 🤖 AI 토픽 큐 관리 명령어 (/queue, /remove, /clear) ──
+async function fetchIncomingTweets() {
+  const fetchResult = await ghFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/contents/${INCOMING_TWEETS_PATH}`);
+  if (fetchResult.status !== 200 || !fetchResult.data || !fetchResult.data.content) {
+    return { list: [], sha: null };
+  }
+  try {
+    const list = JSON.parse(Buffer.from(fetchResult.data.content, 'base64').toString('utf-8'));
+    return { list: Array.isArray(list) ? list : [], sha: fetchResult.data.sha };
+  } catch {
+    return { list: [], sha: fetchResult.data.sha || null };
+  }
+}
+
+async function saveIncomingTweets(list, sha, commitMessage) {
+  const content = Buffer.from(JSON.stringify(list, null, 2), 'utf-8').toString('base64');
+  const body = { message: commitMessage, content, branch: 'main' };
+  if (sha) body.sha = sha;
+  return await ghPut(`/repos/${REPO_OWNER}/${REPO_NAME}/contents/${INCOMING_TWEETS_PATH}`, body);
+}
+
+async function handleAIQueueCommand(msg) {
+  const text = (msg.text || '').trim();
+  const parts = text.split(/\s+/);
+  const cmd = parts[0].split('@')[0].toLowerCase();
+
+  try {
+    // /queue — 큐 목록 확인
+    if (cmd === '/queue' || cmd === '/list') {
+      const { list } = await fetchIncomingTweets();
+      if (list.length === 0) {
+        await tgSend(`🤖 트윗 큐가 비어있습니다.`, AI_TOPIC_ID);
+        return true;
+      }
+      let lines = [`🤖 <b>현재 큐 (${list.length}개)</b>\n`];
+      list.forEach((t, i) => {
+        lines.push(`${i + 1}. <a href="${t.url}">@${t.username}/${t.tweet_id}</a>`);
+      });
+      lines.push(`\n<code>/remove N</code> 으로 N번 삭제`);
+      lines.push(`<code>/clear</code> 로 전체 삭제`);
+      await tgSend(lines.join('\n'), AI_TOPIC_ID);
+      return true;
+    }
+
+    // /remove N — N번째 삭제 (1-indexed) / /undo — 마지막 항목 삭제
+    if (cmd === '/remove' || cmd === '/undo') {
+      const { list, sha } = await fetchIncomingTweets();
+      if (list.length === 0) {
+        await tgSend(`🤖 큐가 이미 비어있습니다.`, AI_TOPIC_ID);
+        return true;
+      }
+
+      let index;
+      if (cmd === '/undo') {
+        index = list.length - 1; // 마지막 항목
+      } else {
+        const n = parseInt(parts[1], 10);
+        if (isNaN(n) || n < 1 || n > list.length) {
+          await tgSend(`⚠️ 사용법: <code>/remove N</code> (1~${list.length} 사이)\n현재 큐 확인: <code>/queue</code>`, AI_TOPIC_ID);
+          return true;
+        }
+        index = n - 1;
+      }
+
+      const removed = list.splice(index, 1)[0];
+      const result = await saveIncomingTweets(
+        list, sha,
+        `chore(ai-researcher): 큐 #${index + 1} 제거 (@${removed.username}/${removed.tweet_id})`
+      );
+      if (result.status === 200 || result.status === 201) {
+        await tgSend(
+          `✅ 큐에서 제거됨: <a href="${removed.url}">@${removed.username}/${removed.tweet_id}</a>\n남은 항목: ${list.length}개`,
+          AI_TOPIC_ID
+        );
+      } else {
+        await tgSend(`⚠️ 삭제 실패 (HTTP ${result.status})`, AI_TOPIC_ID);
+      }
+      return true;
+    }
+
+    // /clear — 큐 전체 비우기
+    if (cmd === '/clear') {
+      const { list, sha } = await fetchIncomingTweets();
+      if (list.length === 0) {
+        await tgSend(`🤖 큐가 이미 비어있습니다.`, AI_TOPIC_ID);
+        return true;
+      }
+      const result = await saveIncomingTweets([], sha, `chore(ai-researcher): 큐 전체 비움 (${list.length}개)`);
+      if (result.status === 200 || result.status === 201) {
+        await tgSend(`🧹 큐 전체 비움 (${list.length}개 제거)`, AI_TOPIC_ID);
+      } else {
+        await tgSend(`⚠️ 비우기 실패 (HTTP ${result.status})`, AI_TOPIC_ID);
+      }
+      return true;
+    }
+
+    // /help - AI 토픽 전용 도움말
+    if (cmd === '/help') {
+      await tgSend(
+        `🤖 <b>AI 토픽 큐 관리</b>\n\n` +
+        `<b>트윗 추가</b>: X.com / twitter.com URL 그냥 붙여넣기\n\n` +
+        `<b>명령어</b>\n` +
+        `<code>/queue</code> - 현재 큐 목록 확인\n` +
+        `<code>/remove N</code> - N번째 항목 삭제\n` +
+        `<code>/undo</code> - 가장 최근 항목 삭제\n` +
+        `<code>/clear</code> - 큐 전체 비움\n\n` +
+        `매일 21:00 KST에 정기 큐레이션 실행됩니다.`,
+        AI_TOPIC_ID
+      );
+      return true;
+    }
+
+    return false; // AI 토픽 전용 명령이 아님 → 기본 handler로 넘김
+  } catch (e) {
+    console.error('[AI Queue Cmd] 오류:', e.message);
+    await tgSend(`⚠️ 명령 처리 실패: ${e.message}`, AI_TOPIC_ID);
+    return true;
+  }
+}
+
 // ── Workflow name → file mapping ──
 const WORKFLOWS = {
   morning:      { file: 'morning.yml',       name: '☀️ 아침 브리핑',   time: '09:30', agent: 'telegram' },
@@ -1576,7 +1696,15 @@ const server = http.createServer((req, res) => {
           const isTranslateRoom = msg.message_thread_id === TRANSLATE_TOPIC_ID;
           const isAIRoom = msg.message_thread_id === AI_TOPIC_ID;
 
-          if (msg.text && msg.text.startsWith('/')) {
+          if (msg.text && msg.text.startsWith('/') && isAIRoom) {
+            // AI 토픽 슬래시 명령은 큐 관리 우선 → 못 잡으면 기본 handler
+            handleAIQueueCommand(msg).then(handled => {
+              if (!handled) {
+                const cmd = msg.text.split('@')[0].split(' ')[0].toLowerCase();
+                handleTgCommand(cmd, msg.text).catch(() => {});
+              }
+            }).catch(e => console.error('[AI Queue Cmd Error]', e.message));
+          } else if (msg.text && msg.text.startsWith('/')) {
             const cmd = msg.text.split('@')[0].split(' ')[0].toLowerCase();
             handleTgCommand(cmd, msg.text).catch(() => {});
           } else if (isAIRoom) {
